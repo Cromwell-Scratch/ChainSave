@@ -16,7 +16,7 @@ const [userEmail, setUserEmail] = useState("");
     { name: "My Circles", href: "/my-circles" },
     { name: "Create Circle", href: "/create-circle" },
     {name: "Invitations",href: "/invitations",},
-    { name: "Wallet", href: "#" },
+    { name: "Wallet", href: "/wallet" },
     { name: "Transactions", href: "#" },
     { name: "Settings", href: "#" },
   ];
