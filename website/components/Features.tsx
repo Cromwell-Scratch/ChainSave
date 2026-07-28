@@ -18,7 +18,7 @@ export default function Features() {
   ];
 
   return (
-    <section className="px-10 py-24 bg-white">
+    <section id="features" className="px-10 py-24 bg-white">
 
       <div className="max-w-6xl mx-auto text-center">
 

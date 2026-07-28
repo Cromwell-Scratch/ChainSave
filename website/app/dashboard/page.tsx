@@ -11,23 +11,68 @@ import ActivityList from "@/components/dashboard/ActivityList";
 export default function DashboardPage() {
   const router = useRouter();
   const [checkingSession, setCheckingSession] = useState(true);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [totalSavings, setTotalSavings] = useState(0);
+  const [activeCircles, setActiveCircles] = useState(0);
+  const [pendingInvites, setPendingInvites] = useState(0);
 
   useEffect(() => {
-    async function checkSession() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+  async function checkSession() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      if (!session) {
-        router.push("/login");
-        return;
-      }
-
-      setCheckingSession(false);
+    if (!session) {
+      router.push("/login");
+      return;
     }
 
-    checkSession();
-  }, [router]);
+    const user = session.user;
+    const userEmail = user.email?.trim().toLowerCase();
+
+    const { data: wallet } = await supabase
+      .from("wallets")
+      .select("balance")
+      .eq("user_id", user.id)
+      .single();
+
+    setWalletBalance(Number(wallet?.balance ?? 0));
+
+    const { count: circlesCount } = await supabase
+      .from("circle_members")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("status", "accepted");
+
+    setActiveCircles(circlesCount ?? 0);
+
+    if (userEmail) {
+      const { count: inviteCount } = await supabase
+        .from("circle_members")
+        .select("*", { count: "exact", head: true })
+        .eq("email", userEmail)
+        .eq("status", "pending");
+
+      setPendingInvites(inviteCount ?? 0);
+    }
+
+    const { data: contributions } = await supabase
+      .from("contributions")
+      .select("amount");
+
+    const savings =
+      contributions?.reduce(
+        (sum, contribution) =>
+          sum + Number(contribution.amount),
+        0
+      ) ?? 0;
+
+    setTotalSavings(savings);
+    setCheckingSession(false);
+  }
+
+  checkSession();
+}, [router]);
 
   if (checkingSession) {
     return (
@@ -54,12 +99,21 @@ export default function DashboardPage() {
               Here&apos;s what&apos;s happening with your savings today.
             </p>
              <div className="mt-8">
-  <StatsCards />
   <div className="mt-8">
-  <QuickActions />
-  <div className="mt-8">
-  <ActivityList />
+  <StatsCards
+    walletBalance={walletBalance}
+    totalSavings={totalSavings}
+    activeCircles={activeCircles}
+    pendingInvites={pendingInvites}
+  />
 </div>
+
+<div className="mt-8">
+  <QuickActions />
+</div>
+
+<div className="mt-8">
+  <ActivityList />
 </div>
 </div>
           </section>

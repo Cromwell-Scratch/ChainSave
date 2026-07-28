@@ -1,42 +1,86 @@
 import Card from "@/components/ui/Card";
+import {
+  Wallet,
+  PiggyBank,
+  Users,
+  Mail,
+} from "lucide-react";
 
-const stats = [
-  {
-    label: "Total Savings",
-    value: "₵0.00",
-    valueClass: "text-green-700",
-  },
-  {
-    label: "Wallet Balance",
-    value: "₵0.00",
-    valueClass: "text-gray-900",
-  },
-  {
-    label: "Active Circles",
-    value: "0",
-    valueClass: "text-gray-900",
-  },
-  {
-    label: "Next Contribution",
-    value: "None",
-    valueClass: "text-gray-900",
-  },
-];
+type StatsCardsProps = {
+  walletBalance: number;
+  totalSavings: number;
+  activeCircles: number;
+  pendingInvites: number;
+};
 
-export default function StatsCards() {
+export default function StatsCards({
+  walletBalance,
+  totalSavings,
+  activeCircles,
+  pendingInvites,
+}: StatsCardsProps) {
+  const formatCurrency = (amount: number) =>
+    `GHS ${amount.toLocaleString("en-GH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+  const stats = [
+    {
+      label: "Wallet Balance",
+      value: formatCurrency(walletBalance),
+      icon: Wallet,
+      color: "text-green-700",
+      bg: "bg-green-100",
+    },
+    {
+      label: "Total Savings",
+      value: formatCurrency(totalSavings),
+      icon: PiggyBank,
+      color: "text-blue-700",
+      bg: "bg-blue-100",
+    },
+    {
+      label: "Active Circles",
+      value: String(activeCircles),
+      icon: Users,
+      color: "text-purple-700",
+      bg: "bg-purple-100",
+    },
+    {
+      label: "Pending Invitations",
+      value: String(pendingInvites),
+      icon: Mail,
+      color: "text-orange-700",
+      bg: "bg-orange-100",
+    },
+  ];
+
   return (
     <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
-      {stats.map((stat) => (
-        <Card key={stat.label}>
-          <p className="text-sm font-medium text-gray-500">
-            {stat.label}
-          </p>
+      {stats.map((stat) => {
+        const Icon = stat.icon;
 
-          <h2 className={`mt-3 text-3xl font-bold ${stat.valueClass}`}>
-            {stat.value}
-          </h2>
-        </Card>
-      ))}
+        return (
+          <Card key={stat.label}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-500">
+                  {stat.label}
+                </p>
+
+                <h2 className={`mt-3 text-3xl font-bold ${stat.color}`}>
+                  {stat.value}
+                </h2>
+              </div>
+
+              <div className={`rounded-full p-3 ${stat.bg}`}>
+                <Icon className={`h-6 w-6 ${stat.color}`} />
+              </div>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }
