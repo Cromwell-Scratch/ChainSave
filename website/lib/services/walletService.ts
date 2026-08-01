@@ -24,12 +24,25 @@ export interface WalletLedgerEntry {
   created_at: string;
 }
 
-export interface WalletAddress {
+export type WalletAddress = {
+  id: string;
   wallet_id: string;
   network: string;
   address: string;
+  public_key: string | null;
   is_primary: boolean;
-}
+  is_active: boolean;
+  metadata: {
+    chain_id?: number;
+    native_currency?: string;
+    balance?: string | number;
+    explorer_url?: string;
+    provider?: string;
+    connected_at?: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export interface UserPreference {
   display_currency: string;
@@ -101,10 +114,16 @@ export async function getWalletAddress(walletId: string) {
   const { data, error } = await supabase
     .from("wallet_addresses")
     .select(`
-      wallet_id,
-      network,
-      address,
-      is_primary
+      id,
+        wallet_id,
+        network,
+        address,
+        public_key,
+        is_primary,
+        is_active,
+        metadata,
+        created_at,
+        updated_at
     `)
     .eq("wallet_id", walletId)
     .eq("is_active", true)

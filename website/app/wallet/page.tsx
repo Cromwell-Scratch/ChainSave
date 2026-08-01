@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  connectRootstockWallet,
+} from "@/lib/blockchain/wallet";
+
+
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -12,6 +17,8 @@ import {
   Send,
   WalletCards,
 } from "lucide-react";
+
+
 
 import Sidebar from "@/components/dashboard/Sidebar";
 import Topbar from "@/components/dashboard/Topbar";
@@ -75,12 +82,50 @@ function formatAmount(currency: string, amount: number) {
   })}`;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null
+  ) {
+    const value = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string | number;
+      shortMessage?: string;
+    };
+
+    return [
+      value.shortMessage,
+      value.message,
+      value.details,
+      value.hint,
+      value.code
+        ? `Error code: ${value.code}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" — ");
+  }
+
+  return String(error || "Unknown error");
+}
+
 export default function WalletPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [connectingRootstock, setConnectingRootstock] =
+  useState(false);
+
+const [rootstockBalance, setRootstockBalance] =
+  useState("0");
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [balances, setBalances] = useState<WalletBalance[]>([]);
@@ -96,6 +141,7 @@ export default function WalletPage() {
   const [showOtherBalances, setShowOtherBalances] = useState(false);
   const [savingCurrency, setSavingCurrency] = useState(false);
   const [notice, setNotice] = useState("");
+ 
 
   const loadWallet = useCallback(async (silent = false) => {
     try {
@@ -136,6 +182,15 @@ export default function WalletPage() {
       setBalances(balancesData);
       setLedger(ledgerData);
       setAddress(addressData);
+      const savedBalance = Number(
+  addressData?.metadata?.balance ?? "0"
+);
+
+setRootstockBalance(
+  Number.isFinite(savedBalance)
+    ? String(savedBalance)
+    : "0"
+);
       setPreferences(preferenceData);
       setRates(rateMap);
     } catch (loadError) {
@@ -317,6 +372,152 @@ export default function WalletPage() {
       setSavingCurrency(false);
     }
   }
+
+  async function handleConnectRootstockWallet() {
+  try {
+    setConnectingRootstock(true);
+    setError("");
+    setNotice("");
+
+    if (!wallet?.id) {
+      throw new Error(
+        "Your ChainSave wallet could not be found."
+      );
+    }
+
+    const connection =
+      await connectRootstockWallet();
+
+    const normalizedAddress =
+      connection.address.toLowerCase();
+
+    const {
+      data: existingAddress,
+      error: existingAddressError,
+    } = await supabase
+      .from("wallet_addresses")
+      .select("id")
+      .eq("wallet_id", wallet.id)
+      .eq("network", "rootstock")
+      .maybeSingle();
+
+    if (existingAddressError) {
+      throw existingAddressError;
+    }
+
+    const now = new Date().toISOString();
+
+    const addressPayload = {
+      wallet_id: wallet.id,
+     network: "rootstock",
+      address: normalizedAddress,
+      is_primary: true,
+      is_active: true,
+      metadata: {
+        chain_id: connection.chainId,
+        native_currency: "tRBTC",
+        balance: connection.balance,
+        explorer_url: connection.explorerUrl,
+        provider: "MetaMask",
+        connected_at: now,
+      },
+      updated_at: now,
+    };
+
+    if (existingAddress) {
+      const { error: updateError } = await supabase
+        .from("wallet_addresses")
+        .update(addressPayload)
+        .eq("id", existingAddress.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from("wallet_addresses")
+        .insert({
+          ...addressPayload,
+          created_at: now,
+        });
+
+      if (insertError) {
+        throw insertError;
+      }
+    }
+
+    setRootstockBalance(connection.balance);
+
+    setNotice(
+      `Rootstock wallet connected successfully. Balance: ${Number(
+        connection.balance
+      ).toFixed(8)} tRBTC.`
+    );
+
+    await loadWallet(true);
+  } catch (connectionError) {
+  const message =
+    getErrorMessage(connectionError) ||
+    "Unable to connect the Rootstock wallet.";
+
+  // Use console.log temporarily so Next.js does not
+  // cover the page with its console-error overlay.
+  console.log(
+    "Rootstock wallet connection failed:",
+    message,
+    connectionError
+  );
+
+  setError(message);
+} finally {
+    setConnectingRootstock(false);
+  }
+}
+
+async function handleDisconnectRootstockWallet() {
+  try {
+    setError("");
+    setNotice("");
+
+    if (!wallet?.id) {
+      throw new Error(
+        "Your ChainSave wallet could not be found."
+      );
+    }
+
+    const { error: disconnectError } = await supabase
+      .from("wallet_addresses")
+      .update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("wallet_id", wallet.id)
+      .eq("network", "rootstock_testnet");
+
+    if (disconnectError) {
+      throw disconnectError;
+    }
+
+    setRootstockBalance("0");
+
+    setNotice(
+      "Rootstock wallet disconnected from ChainSave."
+    );
+
+    await loadWallet(true);
+  } catch (disconnectError) {
+    console.error(
+      "Unable to disconnect Rootstock wallet:",
+      disconnectError
+    );
+
+    setError(
+      disconnectError instanceof Error
+        ? disconnectError.message
+        : "Unable to disconnect the Rootstock wallet."
+    );
+  }
+}
 
   if (loading) {
     return (
@@ -636,22 +837,43 @@ export default function WalletPage() {
             </section>
 
             <WalletAddressCard
-              network={address?.network ?? "ROOTSTOCK"}
-              address={address?.address ?? null}
-              isActive={Boolean(address)}
-              provider="MetaMask"
-              explorerUrl={
-                address?.address
-                  ? `https://rootstock-testnet.blockscout.com/address/${address.address}`
-                  : undefined
-              }
-              onConnect={() =>
-                setNotice("Rootstock wallet connection is scheduled next.")
-              }
-              onDisconnect={() =>
-                setNotice("Wallet disconnection will be enabled with Rootstock.")
-              }
-            />
+  network="Rootstock Testnet"
+  address={
+    address?.is_active
+      ? address.address
+      : null
+  }
+  isActive={Boolean(
+    address?.address && address?.is_active
+  )}
+  provider="MetaMask"
+  explorerUrl={
+    address?.address
+      ? `https://explorer.testnet.rootstock.io/address/${address.address}`
+      : undefined
+  }
+onConnect={() => {
+  if (!connectingRootstock) {
+    void handleConnectRootstockWallet();
+  }
+}}
+onDisconnect={() => {
+  if (!connectingRootstock) {
+    void handleDisconnectRootstockWallet();
+  }
+}}
+/>
+{address?.is_active && (
+  <div className="rounded-2xl border border-orange-200 bg-orange-50 px-5 py-4">
+    <p className="text-sm font-medium text-orange-700">
+      Rootstock Testnet Balance
+    </p>
+
+    <p className="mt-1 text-xl font-bold text-orange-900">
+      {Number(rootstockBalance).toFixed(8)} tRBTC
+    </p>
+  </div>
+)}
 
             <LedgerActivity entries={ledgerEntries} />
 
