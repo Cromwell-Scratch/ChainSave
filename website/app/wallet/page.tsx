@@ -2,6 +2,7 @@
 
 import {
   connectRootstockWallet,
+  getWalletBalance,
 } from "@/lib/blockchain/wallet";
 
 
@@ -182,15 +183,32 @@ const [rootstockBalance, setRootstockBalance] =
       setBalances(balancesData);
       setLedger(ledgerData);
       setAddress(addressData);
-      const savedBalance = Number(
-  addressData?.metadata?.balance ?? "0"
-);
+if (addressData?.is_active && addressData.address) {
+  try {
+    const liveBalance = await getWalletBalance(
+      addressData.address
+    );
 
-setRootstockBalance(
-  Number.isFinite(savedBalance)
-    ? String(savedBalance)
-    : "0"
-);
+    setRootstockBalance(liveBalance);
+  } catch (balanceError) {
+    console.log(
+      "Unable to fetch live Rootstock balance:",
+      balanceError
+    );
+
+    const savedBalance = Number(
+      addressData.metadata?.balance ?? "0"
+    );
+
+    setRootstockBalance(
+      Number.isFinite(savedBalance)
+        ? String(savedBalance)
+        : "0"
+    );
+  }
+} else {
+  setRootstockBalance("0");
+}
       setPreferences(preferenceData);
       setRates(rateMap);
     } catch (loadError) {
@@ -209,6 +227,7 @@ setRootstockBalance(
   useEffect(() => {
     void loadWallet();
   }, [loadWallet]);
+  
 
   useEffect(() => {
   const depositStatus = searchParams.get("deposit");

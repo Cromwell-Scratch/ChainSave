@@ -1,7 +1,7 @@
 import {
   BrowserProvider,
-  Eip1193Provider,
   formatEther,
+  type Eip1193Provider,
 } from "ethers";
 
 import {
@@ -76,6 +76,28 @@ async function switchToRootstockTestnet(
   }
 }
 
+export async function getWalletBalance(
+  address: string
+): Promise<string> {
+  const ethereum = getEthereumProvider();
+
+  const provider = new BrowserProvider(ethereum);
+  const network = await provider.getNetwork();
+
+  if (
+    Number(network.chainId) !==
+    ROOTSTOCK_TESTNET_CHAIN_ID
+  ) {
+    throw new Error(
+      "Please switch MetaMask to Rootstock Testnet."
+    );
+  }
+
+  const balanceWei = await provider.getBalance(address);
+
+  return formatEther(balanceWei);
+}
+
 export async function connectRootstockWallet() {
   const ethereum = getEthereumProvider();
 
@@ -87,7 +109,6 @@ export async function connectRootstockWallet() {
   await switchToRootstockTestnet(ethereum);
 
   const provider = new BrowserProvider(ethereum);
-
   const network = await provider.getNetwork();
 
   if (
@@ -111,7 +132,8 @@ export async function connectRootstockWallet() {
     balance: formatEther(balanceWei),
     chainId: Number(network.chainId),
     network: "rootstock_testnet",
-    explorerUrl: `${ROOTSTOCK_TESTNET_EXPLORER_URL}/address/${address}`,
+    explorerUrl:
+      `${ROOTSTOCK_TESTNET_EXPLORER_URL}/address/${address}`,
   };
 }
 
@@ -151,14 +173,17 @@ export async function getConnectedRootstockWallet() {
     balance: formatEther(balanceWei),
     chainId: Number(network.chainId),
     network: "rootstock_testnet",
-    explorerUrl: `${ROOTSTOCK_TESTNET_EXPLORER_URL}/address/${address}`,
+    explorerUrl:
+      `${ROOTSTOCK_TESTNET_EXPLORER_URL}/address/${address}`,
   };
 }
 
 export function shortenWalletAddress(
   address: string
 ) {
-  if (address.length < 12) return address;
+  if (address.length < 12) {
+    return address;
+  }
 
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
