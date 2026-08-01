@@ -1,10 +1,11 @@
 "use client";
 
 import {
-  CalendarDays,
-  CircleDollarSign,
+  Wallet,
   Users,
-  WalletCards,
+  CalendarClock,
+  Trophy,
+  TrendingUp,
 } from "lucide-react";
 
 type DashboardHeaderProps = {
@@ -13,6 +14,8 @@ type DashboardHeaderProps = {
   activeCircles: number;
   nextContribution: string;
   upcomingPayout: string;
+  totalSavings: number;
+  savingsGoal: number;
 };
 
 export default function DashboardHeader({
@@ -21,107 +24,179 @@ export default function DashboardHeader({
   activeCircles,
   nextContribution,
   upcomingPayout,
+  totalSavings,
+  savingsGoal,
 }: DashboardHeaderProps) {
-  function getGreeting() {
-    const hour = new Date().getHours();
+  const hour = new Date().getHours();
 
-    if (hour < 12) {
-      return "Good Morning";
-    }
+  const greeting =
+    hour < 12
+      ? "Good Morning"
+      : hour < 18
+      ? "Good Afternoon"
+      : "Good Evening";
 
-    if (hour < 18) {
-      return "Good Afternoon";
-    }
+  const progress =
+    savingsGoal > 0
+      ? Math.min(
+          (totalSavings / savingsGoal) * 100,
+          100
+        )
+      : 0;
 
-    return "Good Evening";
-  }
-
-  function formatMoney(amount: number) {
-    return `GHS ${Number(amount).toLocaleString(
-      "en-US",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }
-    )}`;
-  }
+  const money = (amount: number) =>
+    amount.toLocaleString("en-US", {
+      style: "currency",
+      currency: "GHS",
+      minimumFractionDigits: 2,
+    });
 
   return (
-    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-800 via-green-700 to-emerald-600 p-6 text-white shadow-lg sm:p-8">
-      <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-900 via-green-700 to-lime-500 p-8 text-white shadow-2xl">
 
-      <div className="absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-white/5" />
+      {/* Decorative Background */}
+      <div className="absolute inset-0 opacity-15">
+        <svg
+          className="h-full w-full"
+          viewBox="0 0 1200 320"
+        >
+          <path
+            d="M0 210 C180 150 300 260 470 210 S760 120 1200 220V320H0Z"
+            fill="#dcfce7"
+          />
+        </svg>
+      </div>
 
-      <div className="relative">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-green-100">
-            Savings overview
+      <div className="relative flex flex-col gap-8 xl:flex-row xl:justify-between">
+
+        <div className="flex-1">
+
+          <p className="uppercase tracking-[0.25em] text-sm text-green-100">
+            ChainSave Dashboard
           </p>
 
-          <h1 className="mt-3 text-3xl font-bold sm:text-4xl">
-            {getGreeting()}, {userName} 👋
+          <h1 className="mt-2 text-4xl font-bold">
+            {greeting}, {userName} 👋
           </h1>
 
-          <p className="mt-2 max-w-2xl text-green-100">
-            Stay consistent—every contribution brings
-            you closer to your savings goals.
+          <p className="mt-3 max-w-xl text-green-50">
+            Every contribution brings you one step closer to
+            financial freedom. Keep saving consistently.
           </p>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+
+            <StatCard
+              icon={<Wallet size={22} />}
+              title="Wallet"
+              value={money(walletBalance)}
+            />
+
+            <StatCard
+              icon={<Users size={22} />}
+              title="Active Circles"
+              value={activeCircles.toString()}
+            />
+
+            <StatCard
+              icon={<CalendarClock size={22} />}
+              title="Next Contribution"
+              value={nextContribution}
+            />
+
+            <StatCard
+              icon={<TrendingUp size={22} />}
+              title="Upcoming Payout"
+              value={upcomingPayout}
+            />
+
+          </div>
+
         </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <HeaderItem
-            icon={WalletCards}
-            label="Wallet Balance"
-            value={formatMoney(walletBalance)}
-          />
+        <div className="w-full max-w-sm rounded-3xl bg-white/15 p-6 backdrop-blur-xl border border-white/20">
 
-          <HeaderItem
-            icon={Users}
-            label="Active Circles"
-            value={String(activeCircles)}
-          />
+          <div className="flex items-center gap-2">
 
-          <HeaderItem
-            icon={CalendarDays}
-            label="Next Contribution"
-            value={nextContribution}
-          />
+            <Trophy className="text-yellow-300" />
 
-          <HeaderItem
-            icon={CircleDollarSign}
-            label="Upcoming Payout"
-            value={upcomingPayout}
-          />
+            <h2 className="font-semibold text-lg">
+              Savings Goal
+            </h2>
+
+          </div>
+
+          <div className="mt-6 text-5xl font-bold">
+            {progress.toFixed(0)}%
+          </div>
+
+          <div className="mt-5 h-3 rounded-full bg-white/20">
+
+            <div
+              className="h-3 rounded-full bg-lime-300 transition-all duration-700"
+              style={{
+                width: `${progress}%`,
+              }}
+            />
+
+          </div>
+
+          <div className="mt-5 flex justify-between text-sm text-green-100">
+
+            <span>
+              Saved
+            </span>
+
+            <span>
+              Goal
+            </span>
+
+          </div>
+
+          <div className="mt-2 flex justify-between font-semibold">
+
+            <span>
+              {money(totalSavings)}
+            </span>
+
+            <span>
+              {money(savingsGoal)}
+            </span>
+
+          </div>
+
         </div>
+
       </div>
+
     </section>
   );
 }
 
-type HeaderItemProps = {
-  icon: React.ComponentType<{
-    className?: string;
-  }>;
-  label: string;
-  value: string;
-};
-
-function HeaderItem({
-  icon: Icon,
-  label,
+function StatCard({
+  icon,
+  title,
   value,
-}: HeaderItemProps) {
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur-sm">
-      <Icon className="h-6 w-6 text-green-100" />
+    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-md transition-all hover:-translate-y-1 hover:bg-white/15">
 
-      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-green-100">
-        {label}
+      <div className="text-lime-300">
+        {icon}
+      </div>
+
+      <p className="mt-3 text-xs uppercase tracking-wide text-green-100">
+        {title}
       </p>
 
-      <p className="mt-2 text-lg font-bold text-white">
+      <p className="mt-1 text-lg font-bold">
         {value}
       </p>
+
     </div>
   );
 }

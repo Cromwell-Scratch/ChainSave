@@ -13,6 +13,9 @@ import SavingsProgressCard from "@/components/dashboard/SavingsProgressCard";
 import Sidebar from "@/components/dashboard/Sidebar";
 import Topbar from "@/components/dashboard/Topbar";
 import UpcomingContributions from "@/components/dashboard/UpcomingContributions";
+import SavingsGrowthChart from "@/components/dashboard/analytics/SavingsGrowthChart";
+import MonthlyContributionsChart from "@/components/dashboard/analytics/MonthlyContributionsChart";
+import SmartInsights from "@/components/dashboard/SmartInsights";
 import { supabase } from "@/lib/supabase";
 
 type MembershipRow = {
@@ -87,6 +90,7 @@ export default function DashboardPage() {
 
   const [dashboardRefreshKey, setDashboardRefreshKey] =
     useState(0);
+    
 
   useEffect(() => {
     async function loadDashboard() {
@@ -472,7 +476,7 @@ export default function DashboardPage() {
         <div className="min-w-0 flex-1">
           <Topbar />
 
-          <section className="p-6 lg:p-8">
+          <section className="mx-auto max-w-7xl p-6 lg:p-8">
             {dashboardError && (
               <p className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-medium text-red-700">
                 {dashboardError}
@@ -480,22 +484,16 @@ export default function DashboardPage() {
             )}
 
             <DashboardHeader
-              userName={userName}
-              walletBalance={
-                walletBalance
-              }
-              activeCircles={
-                activeCircles
-              }
-              nextContribution={
-                nextContribution
-              }
-              upcomingPayout={
-                upcomingPayout
-              }
-            />
+                userName={userName}
+                walletBalance={walletBalance}
+                activeCircles={activeCircles}
+                nextContribution={nextContribution}
+                upcomingPayout={upcomingPayout}
+                totalSavings={totalSavings}
+                savingsGoal={savingsGoal}
+                />
 
-            <div className="mt-8">
+            <div className="mt-6">
               <SavingsProgressCard
                 totalSavings={
                   totalSavings
@@ -512,23 +510,38 @@ export default function DashboardPage() {
               />
             </div>
 
-            <div className="mt-8">
+            <div className="mt-6">
               <QuickActions />
             </div>
 
-            <div className="mt-8">
-              <UpcomingContributions
-                circles={circles}
-                onContributionComplete={() =>
-                  setDashboardRefreshKey(
-                    (currentValue) =>
-                      currentValue + 1
-                  )
-                }
-              />
+            <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+               <SavingsGrowthChart />
+               <MonthlyContributionsChart />
             </div>
 
-            <div className="mt-8">
+
+            <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+  <SmartInsights
+    totalSavings={totalSavings}
+    savingsGoal={savingsGoal}
+    pendingInvites={pendingInvites}
+    nextContribution={nextContribution}
+    upcomingPayout={upcomingPayout}
+    activeCircles={activeCircles}
+  />
+
+  <UpcomingContributions
+    circles={circles}
+    onContributionComplete={() =>
+      setDashboardRefreshKey(
+        (currentValue) =>
+          currentValue + 1
+      )
+    }
+  />
+</div>
+
+            <div className="mt-6">
               <ActivityList />
             </div>
           </section>

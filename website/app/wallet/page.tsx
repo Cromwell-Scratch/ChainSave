@@ -1,1146 +1,814 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
   ArrowUpFromLine,
-  Banknote,
-  CircleDollarSign,
-  Clock3,
-  Filter,
-  Landmark,
-  Search,
-  TrendingDown,
-  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Send,
   WalletCards,
-  X,
 } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/Sidebar";
 import Topbar from "@/components/dashboard/Topbar";
-import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
-import Input from "@/components/ui/Input";
+import WalletAddressCard from "@/components/wallet/WalletAddressCard";
+import LedgerActivity, {
+  type LedgerEntry,
+} from "@/components/wallet/LedgerActivity";
+import ConvertCurrencyModal from "@/components/wallet/ConvertCurrencyModal";
+import SendMoneyModal from "@/components/wallet/SendMoneyModal";
+import DepositModal from "@/components/wallet/DepositModal";
+import WithdrawModal from "@/components/wallet/WithdrawModal";
+
 import { supabase } from "@/lib/supabase";
+import {
+  convert,
+  getBalances,
+  getLedger,
+  getUserPreferences,
+  getWallet,
+  getWalletAddress,
+  sendInternal,
+  type Wallet,
+  type WalletAddress,
+  type WalletBalance,
+  type WalletLedgerEntry,
+  type UserPreference,
+} from "@/lib/services/walletService";
+import { findWalletByEmail } from "@/lib/services/userService";
 
-type Wallet = {
-  id: string;
-  user_id: string;
-  balance: number;
-  currency: string;
-  created_at: string | null;
-};
-
-type WalletTransaction = {
-  id: string;
-  wallet_id: string;
-  amount: number;
-  transaction_type: string;
-  description: string | null;
-  status: string;
-  created_at: string | null;
-};
-
-type TransactionMode = "deposit" | "withdraw";
-
-type TransactionFilter =
-  | "all"
+type ActiveModal =
+  | null
   | "deposit"
   | "withdraw"
-  | "contribution"
-  | "payout";
+  | "convert"
+  | "send";
 
-const transactionFilters: {
-  label: string;
-  value: TransactionFilter;
-}[] = [
-  { label: "All", value: "all" },
-  { label: "Deposits", value: "deposit" },
-  { label: "Withdrawals", value: "withdraw" },
-  { label: "Contributions", value: "contribution" },
-  { label: "Payouts", value: "payout" },
-];
+type ExchangeRateRow = {
+  base_currency: string;
+  quote_currency: string;
+  rate: number | string;
+};
+
+const SUPPORTED_CURRENCIES = ["GHS", "NGN", "KES", "RBTC"] as const;
+
+const currencyMeta: Record<
+  string,
+  { name: string; symbol: string; decimals: number }
+> = {
+  GHS: { name: "Ghana Cedi", symbol: "GH₵", decimals: 2 },
+  NGN: { name: "Nigerian Naira", symbol: "₦", decimals: 2 },
+  KES: { name: "Kenyan Shilling", symbol: "KSh", decimals: 2 },
+  RBTC: { name: "Rootstock Bitcoin", symbol: "₿", decimals: 8 },
+};
+
+function formatAmount(currency: string, amount: number) {
+  const decimals = currencyMeta[currency]?.decimals ?? 2;
+
+  return `${currency} ${amount.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
+}
 
 export default function WalletPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
   const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [transactions, setTransactions] = useState<
-    WalletTransaction[]
-  >([]);
+  const [balances, setBalances] = useState<WalletBalance[]>([]);
+  const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
+  const [address, setAddress] = useState<WalletAddress | null>(null);
+  const [preferences, setPreferences] = useState<UserPreference>({
+    display_currency: "GHS",
+    default_payment_method: "wallet",
+  });
 
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [rates, setRates] = useState<Record<string, number>>({});
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [showOtherBalances, setShowOtherBalances] = useState(false);
+  const [savingCurrency, setSavingCurrency] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  const [activeFilter, setActiveFilter] =
-    useState<TransactionFilter>("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const loadWallet = useCallback(async (silent = false) => {
+    try {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
 
-  const [modalMode, setModalMode] =
-    useState<TransactionMode | null>(null);
-  const [amount, setAmount] = useState("");
-  const [transactionMessage, setTransactionMessage] = useState("");
-  const [processing, setProcessing] = useState(false);
+      setError("");
 
-  const loadTransactions = useCallback(
-    async (walletId: string) => {
-      const {
-        data: transactionData,
-        error: transactionError,
-      } = await supabase
-        .from("wallet_transactions")
-        .select(
-          "id, wallet_id, amount, transaction_type, description, status, created_at"
-        )
-        .eq("wallet_id", walletId)
-        .order("created_at", { ascending: false })
-        .limit(100);
+      const walletData = await getWallet();
 
-      if (transactionError) {
-        throw transactionError;
+      const [
+        balancesData,
+        ledgerData,
+        addressData,
+        preferenceData,
+        rateResponse,
+      ] = await Promise.all([
+        getBalances(walletData.id),
+        getLedger(walletData.id, 12),
+        getWalletAddress(walletData.id),
+        getUserPreferences(),
+        supabase
+          .from("exchange_rates")
+          .select("base_currency, quote_currency, rate"),
+      ]);
+
+      if (rateResponse.error) {
+        console.error("Exchange-rate loading error:", rateResponse.error);
       }
 
-      setTransactions(
-        ((transactionData as WalletTransaction[]) ?? []).map(
-          (transaction) => ({
-            ...transaction,
-            amount: Number(transaction.amount),
-          })
-        )
+      const rateMap: Record<string, number> = {};
+
+      ((rateResponse.data ?? []) as ExchangeRateRow[]).forEach((row) => {
+        rateMap[`${row.base_currency}_${row.quote_currency}`] = Number(row.rate);
+      });
+
+      setWallet(walletData);
+      setBalances(balancesData);
+      setLedger(ledgerData);
+      setAddress(addressData);
+      setPreferences(preferenceData);
+      setRates(rateMap);
+    } catch (loadError) {
+      console.error("Unable to load wallet:", loadError);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load your wallet."
       );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadWallet();
+  }, [loadWallet]);
+
+  useEffect(() => {
+  const depositStatus = searchParams.get("deposit");
+
+  if (!depositStatus) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  async function handleDepositResult() {
+    if (depositStatus === "success") {
+      await loadWallet(true);
+
+      setError("");
+      setNotice(
+        "Deposit successful. Your ChainSave wallet has been credited."
+      );
+    }
+
+    if (depositStatus === "failed") {
+      setNotice("");
+      setError(
+        "Payment verification failed. Your wallet was not credited."
+      );
+    }
+
+    timer = setTimeout(() => {
+      setNotice("");
+      setError("");
+
+      router.replace("/wallet", {
+        scroll: false,
+      });
+    }, 5000);
+  }
+
+  void handleDepositResult();
+
+  return () => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  };
+}, [loadWallet, router, searchParams]);
+
+  const displayCurrency = preferences.display_currency || "GHS";
+
+  const getRate = useCallback(
+    (fromCurrency: string, toCurrency: string) => {
+      if (fromCurrency === toCurrency) return 1;
+
+      const direct = rates[`${fromCurrency}_${toCurrency}`];
+      if (direct && direct > 0) return direct;
+
+      const inverse = rates[`${toCurrency}_${fromCurrency}`];
+      if (inverse && inverse > 0) return 1 / inverse;
+
+      return null;
     },
-    []
+    [rates]
   );
 
-  const loadWallet = useCallback(async () => {
-    setLoading(true);
-    setMessage("");
+  const primaryBalance = useMemo(() => {
+    return balances.find((balance) => balance.currency === displayCurrency);
+  }, [balances, displayCurrency]);
 
+  const availablePortfolio = useMemo(() => {
+    return balances.reduce((total, balance) => {
+      const rate = getRate(balance.currency, displayCurrency);
+      if (rate === null) return total;
+
+      return total + Number(balance.available_balance) * rate;
+    }, 0);
+  }, [balances, displayCurrency, getRate]);
+
+  const lockedPortfolio = useMemo(() => {
+    return balances.reduce((total, balance) => {
+      const rate = getRate(balance.currency, displayCurrency);
+      if (rate === null) return total;
+
+      return total + Number(balance.locked_balance) * rate;
+    }, 0);
+  }, [balances, displayCurrency, getRate]);
+
+  const totalPortfolio = availablePortfolio + lockedPortfolio;
+
+  const rbtcEquivalent = useMemo(() => {
+    if (displayCurrency === "RBTC") return totalPortfolio;
+
+    const rate = getRate(displayCurrency, "RBTC");
+    return rate === null ? null : totalPortfolio * rate;
+  }, [displayCurrency, getRate, totalPortfolio]);
+
+  const fallbackEquivalent = useMemo(() => {
+    if (displayCurrency !== "RBTC") return null;
+
+    const rate = getRate("RBTC", "GHS");
+    return rate === null ? null : totalPortfolio * rate;
+  }, [displayCurrency, getRate, totalPortfolio]);
+
+  const otherBalances = useMemo(() => {
+    return balances.filter((balance) => balance.currency !== displayCurrency);
+  }, [balances, displayCurrency]);
+
+  const convertibleBalances = useMemo(
+    () =>
+      balances.map((balance) => ({
+        currency: balance.currency,
+        availableBalance: Number(balance.available_balance),
+      })),
+    [balances]
+  );
+
+  const ledgerEntries = useMemo(
+    () =>
+      ledger.map((entry) => ({
+        ...entry,
+        amount: Number(entry.amount),
+        balance_after: Number(entry.balance_after),
+      })) as LedgerEntry[],
+    [ledger]
+  );
+
+  async function changeDisplayCurrency(currency: string) {
     try {
+      setSavingCurrency(true);
+      setNotice("");
+
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
 
-      if (userError) {
-        throw userError;
-      }
+      if (userError || !user) throw new Error("Your session has expired.");
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
-
-      const {
-        data: existingWallet,
-        error: walletError,
-      } = await supabase
-        .from("wallets")
-        .select("id, user_id, balance, currency, created_at")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (walletError) {
-        throw walletError;
-      }
-
-      let loadedWallet = existingWallet as Wallet | null;
-
-      if (!loadedWallet) {
-        const {
-          data: newWallet,
-          error: createWalletError,
-        } = await supabase
-          .from("wallets")
-          .insert({
+      const { error: preferenceError } = await supabase
+        .from("user_preferences")
+        .upsert(
+          {
             user_id: user.id,
-            balance: 0,
-            currency: "GHS",
-          })
-          .select("id, user_id, balance, currency, created_at")
-          .single();
+            display_currency: currency,
+          },
+          { onConflict: "user_id" }
+        );
 
-        if (createWalletError) {
-          throw createWalletError;
-        }
+      if (preferenceError) throw preferenceError;
 
-        loadedWallet = newWallet as Wallet;
-      }
+      setPreferences((current) => ({
+        ...current,
+        display_currency: currency,
+      }));
 
-      const normalizedWallet: Wallet = {
-        ...loadedWallet,
-        balance: Number(loadedWallet.balance),
-      };
-
-      setWallet(normalizedWallet);
-      await loadTransactions(normalizedWallet.id);
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to load wallet."
+      setNotice(`Wallet display currency changed to ${currency}.`);
+    } catch (currencyError) {
+      console.error("Unable to change currency:", currencyError);
+      setError(
+        currencyError instanceof Error
+          ? currencyError.message
+          : "Unable to change wallet currency."
       );
     } finally {
-      setLoading(false);
+      setSavingCurrency(false);
     }
-  }, [loadTransactions, router]);
-
-  useEffect(() => {
-    loadWallet();
-  }, [loadWallet]);
-
-  const totalDeposited = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            transaction.transaction_type === "deposit" &&
-            transaction.status === "completed"
-        )
-        .reduce(
-          (total, transaction) =>
-            total + Math.abs(Number(transaction.amount)),
-          0
-        ),
-    [transactions]
-  );
-
-  const totalWithdrawn = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            transaction.transaction_type === "withdraw" &&
-            transaction.status === "completed"
-        )
-        .reduce(
-          (total, transaction) =>
-            total + Math.abs(Number(transaction.amount)),
-          0
-        ),
-    [transactions]
-  );
-
-  const totalContributed = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            transaction.transaction_type === "contribution" &&
-            transaction.status === "completed"
-        )
-        .reduce(
-          (total, transaction) =>
-            total + Math.abs(Number(transaction.amount)),
-          0
-        ),
-    [transactions]
-  );
-
-  const totalPayouts = useMemo(
-    () =>
-      transactions
-        .filter(
-          (transaction) =>
-            transaction.transaction_type === "payout" &&
-            transaction.status === "completed"
-        )
-        .reduce(
-          (total, transaction) =>
-            total + Math.abs(Number(transaction.amount)),
-          0
-        ),
-    [transactions]
-  );
-
-  const filteredTransactions = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    return transactions.filter((transaction) => {
-      const matchesFilter =
-        activeFilter === "all" ||
-        transaction.transaction_type === activeFilter;
-
-      const searchableText = `${transaction.transaction_type} ${
-        transaction.description ?? ""
-      } ${transaction.status}`.toLowerCase();
-
-      const matchesSearch =
-        !normalizedSearch ||
-        searchableText.includes(normalizedSearch);
-
-      return matchesFilter && matchesSearch;
-    });
-  }, [activeFilter, searchTerm, transactions]);
-
-  function formatAmount(value: number) {
-    return Number(value).toLocaleString("en-GH", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
   }
 
-  function formatTransactionDate(date: string | null) {
-    if (!date) {
-      return "Date unavailable";
-    }
-
-    const transactionDate = new Date(date);
-    const today = new Date();
-    const yesterday = new Date();
-
-    yesterday.setDate(today.getDate() - 1);
-
-    const isToday =
-      transactionDate.toDateString() === today.toDateString();
-
-    const isYesterday =
-      transactionDate.toDateString() ===
-      yesterday.toDateString();
-
-    const time = transactionDate.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    if (isToday) {
-      return `Today, ${time}`;
-    }
-
-    if (isYesterday) {
-      return `Yesterday, ${time}`;
-    }
-
-    return transactionDate.toLocaleString();
-  }
-
-  function openTransactionModal(mode: TransactionMode) {
-    setModalMode(mode);
-    setAmount("");
-    setTransactionMessage("");
-    setSuccessMessage("");
-  }
-
-  function closeTransactionModal() {
-    if (processing) return;
-
-    setModalMode(null);
-    setAmount("");
-    setTransactionMessage("");
-  }
-
-  async function handlePaystackDeposit(
-  depositAmount: number
-) {
-  setMessage("");
-  setSuccessMessage("");
-
-  try {
-    if (
-      !Number.isFinite(depositAmount) ||
-      depositAmount <= 0
-    ) {
-      setMessage("Enter a valid deposit amount.");
-      return;
-    }
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      throw userError;
-    }
-
-    if (!user?.email) {
-      setMessage("You must be logged in to make a deposit.");
-      return;
-    }
-
-    const {
-  data: { session },
-  error: sessionError,
-} = await supabase.auth.getSession();
-
-if (sessionError) {
-  throw sessionError;
-}
-
-if (!session?.access_token) {
-  throw new Error(
-    "Your session has expired. Please sign in again."
-  );
-}
-
-const response = await fetch(
-  "/api/paystack/initialize",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({
-      amount: depositAmount,
-    }),
-  }
-);
-
-    const result = await response.json();
-
-    if (!response.ok || !result.status) {
-      throw new Error(
-        result.message ||
-          "Unable to initialize the Paystack payment."
-      );
-    }
-
-    const accessCode = result.data?.access_code;
-
-    if (!accessCode) {
-      throw new Error(
-        "Paystack did not return an access code."
-      );
-    }
-
-    /*
-     * Import Paystack only after the user clicks.
-     * This prevents Next.js from loading it during
-     * server-side rendering, where window is unavailable.
-     */
-    const { default: PaystackPop } = await import(
-      "@paystack/inline-js"
-    );
-
-    const popup = new PaystackPop();
-
-    popup.resumeTransaction(accessCode);
-  } catch (error) {
-    console.error(
-      "Paystack initialization error:",
-      error
-    );
-
-    setMessage(
-      error instanceof Error
-        ? error.message
-        : "Unable to initialize payment."
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-gray-50">
+        <div className="flex min-h-screen">
+          <Sidebar />
+          <div className="min-w-0 flex-1">
+            <Topbar />
+            <div className="flex min-h-[70vh] items-center justify-center">
+              <div className="text-center">
+                <div className="mx-auto h-11 w-11 animate-spin rounded-full border-4 border-green-600 border-t-transparent" />
+                <p className="mt-4 text-gray-600">Loading wallet...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
     );
   }
-}
-
-async function handleWalletTransaction(
-  event: FormEvent<HTMLFormElement>
-) {
-  event.preventDefault();
-
-  if (!wallet || !modalMode) {
-    return;
-  }
-
-  setProcessing(true);
-  setTransactionMessage("");
-  setSuccessMessage("");
-  setMessage("");
-
-  try {
-    const numericAmount = Number(amount);
-
-    if (
-      !Number.isFinite(numericAmount) ||
-      numericAmount <= 0
-    ) {
-      setTransactionMessage("Enter a valid amount.");
-      return;
-    }
-
-    /*
-     * Deposits are initialized through Paystack.
-     * Do not credit the wallet from the browser.
-     */
-    if (modalMode === "deposit") {
-      await handlePaystackDeposit(numericAmount);
-
-      setModalMode(null);
-      setAmount("");
-      return;
-    }
-
-    /*
-     * Temporary development withdrawal flow.
-     */
-    if (numericAmount > Number(wallet.balance)) {
-      setTransactionMessage(
-        "You do not have enough wallet balance for this withdrawal."
-      );
-      return;
-    }
-
-    const currentBalance = Number(wallet.balance);
-    const newBalance = currentBalance - numericAmount;
-
-    const { error: balanceError } = await supabase
-      .from("wallets")
-      .update({
-        balance: newBalance,
-      })
-      .eq("id", wallet.id);
-
-    if (balanceError) {
-      throw balanceError;
-    }
-
-    const {
-      data: newTransaction,
-      error: transactionError,
-    } = await supabase
-      .from("wallet_transactions")
-      .insert({
-        wallet_id: wallet.id,
-        amount: numericAmount,
-        transaction_type: "withdraw",
-        description: "Manual wallet withdrawal",
-        status: "completed",
-      })
-      .select(
-        "id, wallet_id, amount, transaction_type, description, status, created_at"
-      )
-      .single();
-
-    if (transactionError) {
-      /*
-       * Restore the previous balance if recording
-       * the withdrawal transaction fails.
-       */
-      await supabase
-        .from("wallets")
-        .update({
-          balance: currentBalance,
-        })
-        .eq("id", wallet.id);
-
-      throw transactionError;
-    }
-
-    setWallet((currentWallet) =>
-      currentWallet
-        ? {
-            ...currentWallet,
-            balance: newBalance,
-          }
-        : currentWallet
-    );
-
-    setTransactions((currentTransactions) => [
-      {
-        ...(newTransaction as WalletTransaction),
-        amount: Number(newTransaction.amount),
-      },
-      ...currentTransactions,
-    ]);
-
-    setSuccessMessage(
-      `${wallet.currency} ${formatAmount(
-        numericAmount
-      )} was withdrawn successfully.`
-    );
-
-    setModalMode(null);
-    setAmount("");
-  } catch (error) {
-    console.error("Wallet transaction error:", error);
-
-    setTransactionMessage(
-      error instanceof Error
-        ? error.message
-        : "Unable to complete the transaction."
-    );
-  } finally {
-    setProcessing(false);
-  }
-}
 
   return (
-    <main className="min-h-screen bg-gray-100">
+    <main className="min-h-screen bg-gray-50">
       <div className="flex min-h-screen">
         <Sidebar />
 
         <div className="min-w-0 flex-1">
           <Topbar />
 
-          <section className="p-6 lg:p-8">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <section className="mx-auto max-w-7xl space-y-7 px-5 py-8 lg:px-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-green-700">
-                  Financial hub
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-green-600">
+                  Financial Hub
                 </p>
 
                 <h1 className="mt-2 text-4xl font-bold text-gray-900">
                   Wallet
                 </h1>
 
-                <p className="mt-2 text-gray-600">
-                  Manage your ChainSave balance and review your
-                  financial activity.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  onClick={() =>
-                    openTransactionModal("deposit")
-                  }
-                  disabled={!wallet || loading}
-                >
-                  <ArrowDownToLine className="mr-2 h-5 w-5" />
-                  Deposit Funds
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    openTransactionModal("withdraw")
-                  }
-                  disabled={!wallet || loading}
-
-                  
-                >
-                  <ArrowUpFromLine className="mr-2 h-5 w-5" />
-                  Withdraw
-                </Button>
-              </div>
-            </div>
-
-            {loading && (
-              <p className="mt-8 text-gray-600">
-                Loading wallet...
-              </p>
-            )}
-
-            {message && (
-              <p className="mt-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-medium text-red-700">
-                {message}
-              </p>
-            )}
-
-            {successMessage && (
-              <p className="mt-8 rounded-xl border border-green-200 bg-green-50 px-4 py-3 font-medium text-green-700">
-                {successMessage}
-              </p>
-            )}
-
-            {!loading && !message && wallet && (
-              <>
-                <div className="mt-8 grid gap-6 lg:grid-cols-3">
-                  <Card className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-green-700 via-green-600 to-emerald-600 p-10 text-white shadow-2xl lg:col-span-2">
-                    <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10" />
-                    <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-white/5" />
-
-                    <div className="relative z-10">
-                      <div className="flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="text-sm uppercase tracking-widest text-green-100">
-                            ChainSave Wallet
-                          </p>
-
-                          <h2 className="mt-4 text-4xl font-bold sm:text-5xl">
-                            {wallet.currency}{" "}
-                            {formatAmount(wallet.balance)}
-                          </h2>
-
-                          <p className="mt-2 text-green-100">
-                            Available Balance
-                          </p>
-                        </div>
-
-                        <div className="w-fit rounded-3xl bg-white/20 p-5 backdrop-blur">
-                          <WalletCards className="h-10 w-10" />
-                        </div>
-                      </div>
-
-                      <div className="mt-10 grid gap-6 sm:grid-cols-3">
-                        <WalletInformation
-                          label="Wallet ID"
-                          value={`${wallet.id.slice(0, 8)}...`}
-                        />
-
-                        <WalletInformation
-                          label="Currency"
-                          value={wallet.currency}
-                        />
-
-                        <WalletInformation
-                          label="Status"
-                          value="Active"
-                        />
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-500">
-                          Wallet Currency
-                        </p>
-
-                        <h2 className="mt-3 text-3xl font-bold text-gray-900">
-                          🇬🇭 {wallet.currency}
-                        </h2>
-                      </div>
-
-                      <div className="rounded-2xl bg-green-100 p-3 text-green-700">
-                        <Landmark className="h-6 w-6" />
-                      </div>
-                    </div>
-
-                    <div className="mt-6 space-y-4 border-t border-gray-200 pt-5">
-                      <WalletDetail
-                        label="Currency name"
-                        value="Ghana Cedi"
-                      />
-
-                      <WalletDetail
-                        label="Wallet type"
-                        value="Internal Wallet"
-                      />
-
-                      <WalletDetail
-                        label="Network"
-                        value="Rootstock ready"
-                      />
-
-                      <WalletDetail
-                        label="Status"
-                        value="Active"
-                      />
-                    </div>
-                  </Card>
-                </div>
-
-                <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-                  <SummaryCard
-                    icon={TrendingUp}
-                    label="Total Deposited"
-                    value={`${wallet.currency} ${formatAmount(
-                      totalDeposited
-                    )}`}
-                    accent="green"
-                  />
-
-                  <SummaryCard
-                    icon={TrendingDown}
-                    label="Total Withdrawn"
-                    value={`${wallet.currency} ${formatAmount(
-                      totalWithdrawn
-                    )}`}
-                    accent="red"
-                  />
-
-                  <SummaryCard
-                    icon={CircleDollarSign}
-                    label="Circle Contributions"
-                    value={`${wallet.currency} ${formatAmount(
-                      totalContributed
-                    )}`}
-                    accent="blue"
-                  />
-
-                  <SummaryCard
-                    icon={Banknote}
-                    label="Payouts Received"
-                    value={`${wallet.currency} ${formatAmount(
-                      totalPayouts
-                    )}`}
-                    accent="purple"
-                  />
-                </div>
-
-                <Card className="mt-8">
-                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">
-                        Transaction History
-                      </h2>
-
-                      <p className="mt-1 text-sm text-gray-500">
-                        Review deposits, withdrawals,
-                        contributions, and payouts.
-                      </p>
-                    </div>
-
-                    <div className="relative w-full lg:max-w-sm">
-                      <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-
-                      <Input
-                        type="search"
-                        placeholder="Search transactions"
-                        value={searchTerm}
-                        onChange={(event) =>
-                          setSearchTerm(event.target.value)
-                        }
-                        className="pl-12"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap items-center gap-3">
-                    <div className="mr-1 flex items-center gap-2 text-sm font-medium text-gray-500">
-                      <Filter className="h-4 w-4" />
-                      Filter
-                    </div>
-
-                    {transactionFilters.map((filter) => (
-                      <button
-                        key={filter.value}
-                        type="button"
-                        onClick={() =>
-                          setActiveFilter(filter.value)
-                        }
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                          activeFilter === filter.value
-                            ? "bg-green-700 text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                        }`}
-                      >
-                        {filter.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-7">
-                    {filteredTransactions.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-gray-300 p-10 text-center">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700">
-                          <WalletCards className="h-7 w-7" />
-                        </div>
-
-                        <h3 className="mt-5 text-xl font-bold text-gray-900">
-                          No transactions found
-                        </h3>
-
-                        <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">
-                          Change the selected filter or deposit
-                          funds to begin using your wallet.
-                        </p>
-
-                        <Button
-                          className="mt-6"
-                          onClick={() =>
-                            openTransactionModal("deposit")
-                          }
-                        >
-                          <ArrowDownToLine className="mr-2 h-5 w-5" />
-                          Deposit Funds
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {filteredTransactions.map(
-                          (transaction) => (
-                            <TransactionRow
-                              key={transaction.id}
-                              transaction={transaction}
-                              currency={wallet.currency}
-                              formatAmount={formatAmount}
-                              formatDate={
-                                formatTransactionDate
-                              }
-                            />
-                          )
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </>
-            )}
-          </section>
-        </div>
-      </div>
-
-      {modalMode && wallet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-md shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {modalMode === "deposit"
-                    ? "Deposit Funds"
-                    : "Withdraw Funds"}
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {modalMode === "deposit"
-                    ? "Add funds to your internal ChainSave wallet."
-                    : `Available balance: ${
-                        wallet.currency
-                      } ${formatAmount(wallet.balance)}`}
+                <p className="mt-2 text-gray-500">
+                  Manage your ChainSave balance and financial activity.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={closeTransactionModal}
-                className="rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
-                aria-label="Close transaction form"
+                onClick={() => void loadWallet(true)}
+                disabled={refreshing}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-60"
               >
-                <X className="h-6 w-6" />
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                />
+                Refresh
               </button>
             </div>
 
-            <form
-              onSubmit={handleWalletTransaction}
-              className="mt-6 space-y-5"
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-800 shadow-sm"
             >
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Amount
-                </label>
+                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-600 text-sm font-bold text-white">
+                  !
+                </div>
 
-                <Input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  placeholder="Enter amount"
-                  value={amount}
-                  onChange={(event) =>
-                    setAmount(event.target.value)
-                  }
-                  required
-                />
+                   <div>
+                   <p className="font-semibold">Something went wrong</p>
 
-                <p className="mt-2 text-xs text-gray-500">
-                  Currency: {wallet.currency}
-                </p>
-              </div>
-
-              {transactionMessage && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                  {transactionMessage}
-                </p>
+                   <p className="mt-1 text-sm">{error}</p>
+                 </div>
+               </div>
               )}
 
-              <div className="flex justify-end gap-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={closeTransactionModal}
-                  disabled={processing}
+            {notice && (
+               <div
+                  role="status"
+                  className="flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 px-5 py-4 text-green-800 shadow-sm"
+           >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm font-bold text-white">
+                 ✓
+                </div>
+
+           <div>
+              <p className="font-semibold">Success</p>
+
+              <p className="mt-1 text-sm">{notice}</p>
+           </div>
+         </div>
+       )}
+
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
+              <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-700 via-green-600 to-lime-500 p-7 text-white shadow-xl">
+                <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10" />
+
+                <div className="relative">
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-green-100">
+                    ChainSave Wallet
+                  </p>
+
+                  <p className="mt-5 text-sm text-green-100">
+                    Available portfolio balance
+                  </p>
+
+                  <h2 className="mt-2 text-4xl font-bold sm:text-5xl">
+                    {formatAmount(displayCurrency, availablePortfolio)}
+                  </h2>
+
+                  <p className="mt-3 text-sm font-medium text-green-50">
+                    {displayCurrency === "RBTC"
+                      ? fallbackEquivalent === null
+                        ? "GHS equivalent unavailable"
+                        : `≈ ${formatAmount("GHS", fallbackEquivalent)}`
+                      : rbtcEquivalent === null
+                        ? "RBTC equivalent unavailable"
+                        : `≈ ${formatAmount("RBTC", rbtcEquivalent)}`}
+                  </p>
+
+                  <div className="mt-8 grid gap-4 text-sm sm:grid-cols-3">
+                    <div>
+                      <p className="text-green-100">Wallet ID</p>
+                      <p className="mt-1 font-semibold">
+                        {wallet?.id.slice(0, 8)}...
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-green-100">Currency</p>
+                      <p className="mt-1 font-semibold">{displayCurrency}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-green-100">Status</p>
+                      <p className="mt-1 font-semibold">Active</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 grid gap-3 sm:grid-cols-4">
+                    <button
+                      type="button"
+                      onClick={() => setActiveModal("deposit")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 font-semibold text-green-700 transition hover:bg-green-50"
+                    >
+                      <ArrowDownToLine className="h-4 w-4" />
+                      Deposit
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                        if (displayCurrency !== "GHS") {
+                        setNotice(
+                           "Paystack withdrawals currently use your GHS balance. Change the wallet currency to GHS before withdrawing."
+                   );
+                     return;
+                         }
+
+                        setActiveModal("withdraw");
+                        }}
+                         className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 font-semibold text-white transition hover:bg-white/20"
+                         >
+                           <ArrowUpFromLine className="h-4 w-4" />
+                           Withdraw
+                        </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveModal("convert")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 font-semibold text-white transition hover:bg-white/20"
+                    >
+                      <ArrowLeftRight className="h-4 w-4" />
+                      Convert
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveModal("send")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 font-semibold text-white transition hover:bg-white/20"
+                    >
+                      <Send className="h-4 w-4" />
+                      Send
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-700">
+                    <WalletCards className="h-5 w-5" />
+                  </div>
+
+                  <div>
+                    <h2 className="font-semibold text-gray-900">
+                      Wallet Currency
+                    </h2>
+
+                    <p className="text-sm text-gray-500">
+                      Choose what you see across ChainSave.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-2xl bg-gray-50 p-5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                    Current currency
+                  </p>
+
+                  <p className="mt-2 text-2xl font-bold text-gray-900">
+                    {currencyMeta[displayCurrency]?.symbol} {displayCurrency}
+                  </p>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    {currencyMeta[displayCurrency]?.name}
+                  </p>
+                </div>
+
+                <label className="mt-5 block text-sm font-semibold text-gray-700">
+                  Change currency
+                </label>
+
+                <select
+                  value={displayCurrency}
+                  onChange={(event) =>
+                    void changeDisplayCurrency(event.target.value)
+                  }
+                  disabled={savingCurrency}
+                  className="mt-2 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 font-medium text-gray-900 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100 disabled:opacity-60"
                 >
-                  Cancel
-                </Button>
+                  {SUPPORTED_CURRENCIES.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currency} — {currencyMeta[currency].name}
+                    </option>
+                  ))}
+                </select>
 
-                <Button type="submit" disabled={processing}>
-                  {processing
-                    ? "Processing..."
-                    : modalMode === "deposit"
-                      ? "Confirm Deposit"
-                      : "Confirm Withdrawal"}
-                </Button>
-              </div>
-            </form>
-          </Card>
+                <div className="mt-5 grid grid-cols-2 gap-4">
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">
+                      Available
+                    </p>
+                    <p className="mt-2 font-bold text-gray-900">
+                      {formatAmount(
+                        displayCurrency,
+                        Number(primaryBalance?.available_balance ?? 0)
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">
+                      Locked
+                    </p>
+                    <p className="mt-2 font-bold text-gray-900">
+                      {formatAmount(
+                        displayCurrency,
+                        Number(primaryBalance?.locked_balance ?? 0)
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setShowOtherBalances((current) => !current)}
+                className="flex w-full items-center justify-between text-left"
+              >
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Other Currency Balances
+                  </h2>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    Hidden by default to keep your wallet simple.
+                  </p>
+                </div>
+
+                {showOtherBalances ? (
+                  <ChevronUp className="h-5 w-5 text-gray-500" />
+                ) : (
+                  <ChevronDown className="h-5 w-5 text-gray-500" />
+                )}
+              </button>
+
+              {showOtherBalances && (
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  {otherBalances.map((balance) => (
+                    <div
+                      key={balance.currency}
+                      className="rounded-2xl border border-gray-200 bg-gray-50 p-5"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-bold text-gray-900">
+                            {balance.currency}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-500">
+                            {currencyMeta[balance.currency]?.name}
+                          </p>
+                        </div>
+
+                        <p className="font-bold text-gray-900">
+                          {formatAmount(
+                            balance.currency,
+                            Number(balance.available_balance) +
+                              Number(balance.locked_balance)
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <WalletAddressCard
+              network={address?.network ?? "ROOTSTOCK"}
+              address={address?.address ?? null}
+              isActive={Boolean(address)}
+              provider="MetaMask"
+              explorerUrl={
+                address?.address
+                  ? `https://rootstock-testnet.blockscout.com/address/${address.address}`
+                  : undefined
+              }
+              onConnect={() =>
+                setNotice("Rootstock wallet connection is scheduled next.")
+              }
+              onDisconnect={() =>
+                setNotice("Wallet disconnection will be enabled with Rootstock.")
+              }
+            />
+
+            <LedgerActivity entries={ledgerEntries} />
+
+            <ConvertCurrencyModal
+              open={activeModal === "convert"}
+              balances={convertibleBalances}
+              rates={rates}
+              onClose={() => setActiveModal(null)}
+              onConvert={async (data) => {
+                await convert(
+                  data.fromCurrency,
+                  data.toCurrency,
+                  data.amount,
+                  data.convertedAmount
+                );
+
+                setNotice("Currency converted successfully.");
+                await loadWallet(true);
+              }}
+            />
+
+            <SendMoneyModal
+              open={activeModal === "send"}
+              balances={convertibleBalances}
+              onClose={() => setActiveModal(null)}
+              onSend={async (data) => {
+                if (data.recipient.startsWith("0x")) {
+                  throw new Error(
+                    "Rootstock address transfers are not enabled yet. Use a ChainSave email."
+                  );
+                }
+
+                const receiverWalletId = await findWalletByEmail(data.recipient);
+
+                await sendInternal(
+                  receiverWalletId,
+                  data.currency,
+                  data.amount,
+                  data.note || `Transfer to ${data.recipient}`
+                );
+
+                setNotice("Transfer completed successfully.");
+                await loadWallet(true);
+              }}
+            />
+            <DepositModal
+  open={activeModal === "deposit"}
+  currency={displayCurrency}
+  onClose={() => setActiveModal(null)}
+  onDeposit={async (amount) => {
+    if (displayCurrency === "RBTC") {
+      throw new Error(
+        "RBTC deposits will use the Rootstock wallet, not Paystack."
+      );
+    }
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (
+      sessionError ||
+      !session?.access_token
+    ) {
+      throw new Error(
+        "Your session has expired. Please log in again."
+      );
+    }
+
+    const response = await fetch(
+      "/api/paystack/initialize",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          amount,
+          currency: displayCurrency,
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ??
+        "Unable to initialize Paystack payment."
+      );
+    }
+
+    window.location.assign(
+      result.authorizationUrl
+    );
+  }}
+/>
+
+             <WithdrawModal
+  open={activeModal === "withdraw"}
+  currency="GHS"
+  availableBalance={Number(
+    balances.find(
+      (balance) => balance.currency === "GHS"
+    )?.available_balance ?? 0
+  )}
+  onClose={() => setActiveModal(null)}
+  onWithdraw={async (data) => {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (
+      sessionError ||
+      !session?.access_token
+    ) {
+      throw new Error(
+        "Your session has expired. Please log in again."
+      );
+    }
+
+    const response = await fetch(
+      "/api/paystack/withdraw",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          ...data,
+          currency: "GHS",
+        }),
+      }
+    );
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error ??
+        "Unable to process withdrawal."
+      );
+    }
+
+    setNotice(result.message);
+    await loadWallet(true);
+  }}
+/>
+          </section>
         </div>
-      )}
+      </div>
     </main>
-  );
-}
-
-type WalletInformationProps = {
-  label: string;
-  value: string;
-};
-
-function WalletInformation({
-  label,
-  value,
-}: WalletInformationProps) {
-  return (
-    <div>
-      <p className="text-xs uppercase tracking-wide text-green-100">
-        {label}
-      </p>
-
-      <p className="mt-1 font-semibold text-white">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-type WalletDetailProps = {
-  label: string;
-  value: string;
-};
-
-function WalletDetail({
-  label,
-  value,
-}: WalletDetailProps) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="text-sm text-gray-500">{label}</p>
-
-      <p className="text-sm font-semibold text-gray-900">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-type SummaryCardProps = {
-  icon: React.ComponentType<{
-    className?: string;
-  }>;
-  label: string;
-  value: string;
-  accent: "green" | "red" | "blue" | "purple";
-};
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}: SummaryCardProps) {
-  const accentClasses = {
-    green: "bg-green-100 text-green-700",
-    red: "bg-red-100 text-red-700",
-    blue: "bg-blue-100 text-blue-700",
-    purple: "bg-purple-100 text-purple-700",
-  };
-
-  return (
-    <Card>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-gray-500">
-            {label}
-          </p>
-
-          <p className="mt-3 text-2xl font-bold text-gray-900">
-            {value}
-          </p>
-        </div>
-
-        <div
-          className={`rounded-2xl p-3 ${accentClasses[accent]}`}
-        >
-          <Icon className="h-6 w-6" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-type TransactionRowProps = {
-  transaction: WalletTransaction;
-  currency: string;
-  formatAmount: (amount: number) => string;
-  formatDate: (date: string | null) => string;
-};
-
-function TransactionRow({
-  transaction,
-  currency,
-  formatAmount,
-  formatDate,
-}: TransactionRowProps) {
-  const transactionStyles = {
-    deposit: {
-      icon: ArrowDownToLine,
-      iconClass: "bg-green-100 text-green-700",
-      amountClass: "text-green-700",
-      title: "Deposit",
-      credit: true,
-    },
-    withdraw: {
-      icon: ArrowUpFromLine,
-      iconClass: "bg-red-100 text-red-700",
-      amountClass: "text-red-600",
-      title: "Withdrawal",
-      credit: false,
-    },
-    contribution: {
-      icon: CircleDollarSign,
-      iconClass: "bg-blue-100 text-blue-700",
-      amountClass: "text-red-600",
-      title: "Circle Contribution",
-      credit: false,
-    },
-    payout: {
-      icon: Banknote,
-      iconClass: "bg-purple-100 text-purple-700",
-      amountClass: "text-green-700",
-      title: "Payout",
-      credit: true,
-    },
-  };
-
-  const style =
-    transactionStyles[
-      transaction.transaction_type as keyof typeof transactionStyles
-    ] ?? {
-      icon: WalletCards,
-      iconClass: "bg-gray-100 text-gray-700",
-      amountClass: "text-gray-900",
-      title: transaction.transaction_type,
-      credit: Number(transaction.amount) >= 0,
-    };
-
-  const Icon = style.icon;
-
-  return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 p-4 transition hover:border-gray-300 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-4">
-        <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${style.iconClass}`}
-        >
-          <Icon className="h-6 w-6" />
-        </div>
-
-        <div className="min-w-0">
-          <p className="font-bold capitalize text-gray-900">
-            {style.title}
-          </p>
-
-          <p className="mt-1 truncate text-sm text-gray-500">
-            {transaction.description || "Wallet transaction"}
-          </p>
-
-          <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
-            <Clock3 className="h-3.5 w-3.5" />
-            {formatDate(transaction.created_at)}
-          </div>
-        </div>
-      </div>
-
-      <div className="text-left sm:text-right">
-        <p className={`font-bold ${style.amountClass}`}>
-          {style.credit ? "+" : "-"}
-          {currency}{" "}
-          {formatAmount(
-            Math.abs(Number(transaction.amount))
-          )}
-        </p>
-
-        <span
-          className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-semibold capitalize ${
-            transaction.status === "completed"
-              ? "bg-green-100 text-green-700"
-              : transaction.status === "pending"
-                ? "bg-yellow-100 text-yellow-700"
-                : "bg-red-100 text-red-700"
-          }`}
-        >
-          {transaction.status}
-        </span>
-      </div>
-    </div>
   );
 }

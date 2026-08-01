@@ -1,166 +1,67 @@
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  NextRequest,
-  NextResponse,
-} from "next/server";
 
-export const runtime = "nodejs";
-
-type VerifyRequestBody = {
-  reference?: string;
-};
-
-type PaystackVerificationData = {
-  id: number | string;
-  status: string;
-  reference: string;
-  amount: number;
-  currency: string;
-  paid_at: string | null;
-  customer?: {
-    email?: string | null;
+type PaystackVerification = {
+  status: boolean;
+  message: string;
+  data?: {
+    id: number;
+    status: string;
+    reference: string;
+    amount: number;
+    currency: string;
+    customer?: {
+      email?: string;
+    };
+    metadata?: {
+      purpose?: string;
+      user_id?: string;
+      wallet_id?: string;
+      currency?: string;
+      amount_major?: number | string;
+    };
   };
 };
 
-type PaystackVerificationResponse = {
-  status: boolean;
-  message: string;
-  data?: PaystackVerificationData;
-};
-
-type CreditDepositResult = {
-  success: boolean;
-  already_credited: boolean;
-  transaction_id: string;
-  wallet_balance: number;
-};
-
-export async function POST(
-  request: NextRequest
-) {
+export async function GET(request: NextRequest) {
   try {
+    const reference =
+      request.nextUrl.searchParams.get("reference")?.trim();
+
+    if (!reference) {
+      return NextResponse.json(
+        { error: "Transaction reference is required." },
+        { status: 400 }
+      );
+    }
+
     const paystackSecretKey =
       process.env.PAYSTACK_SECRET_KEY;
-
-    const supabaseUrl =
-      process.env.NEXT_PUBLIC_SUPABASE_URL;
 
     const supabasePublishableKey =
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-    const supabaseServiceRoleKey =
+    const supabaseUrl =
+      process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const serviceRoleKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    if (!paystackSecretKey) {
-      return NextResponse.json(
-        {
-          error:
-            "PAYSTACK_SECRET_KEY is missing from the server environment.",
-        },
-        { status: 500 }
-      );
-    }
-
     if (
+      !paystackSecretKey ||
       !supabaseUrl ||
-      !supabasePublishableKey ||
-      !supabaseServiceRoleKey
+      !serviceRoleKey
     ) {
+      console.error(
+        "Missing Paystack or Supabase server environment variables."
+      );
+
       return NextResponse.json(
-        {
-          error:
-            "Required Supabase server environment variables are missing.",
-        },
+        { error: "Server configuration is incomplete." },
         { status: 500 }
       );
     }
 
-    /*
-     * Require the signed-in user's Supabase access token.
-     */
-    const authorizationHeader =
-      request.headers.get("authorization");
-
-    if (
-      !authorizationHeader?.startsWith(
-        "Bearer "
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error: "Authentication is required.",
-        },
-        { status: 401 }
-      );
-    }
-
-    const accessToken =
-      authorizationHeader.slice(
-        "Bearer ".length
-      );
-
-    const authClient = createClient(
-      supabaseUrl,
-      supabasePublishableKey,
-      {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-        },
-      }
-    );
-
-    const {
-      data: { user },
-      error: userError,
-    } = await authClient.auth.getUser(
-      accessToken
-    );
-
-    if (userError || !user) {
-      return NextResponse.json(
-        {
-          error:
-            "Your session is invalid or has expired.",
-        },
-        { status: 401 }
-      );
-    }
-
-    const body =
-      (await request.json()) as VerifyRequestBody;
-
-    const reference = body.reference?.trim();
-
-    if (!reference) {
-      return NextResponse.json(
-        {
-          error:
-            "A Paystack transaction reference is required.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * Paystack references only use letters, numbers,
-     * hyphens, periods and equals signs.
-     */
-    if (
-      !/^[A-Za-z0-9.\-=]+$/.test(reference)
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "The payment reference is invalid.",
-        },
-        { status: 400 }
-      );
-    }
-
-    /*
-     * Verify directly with Paystack using the secret key.
-     */
     const paystackResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(
         reference
@@ -169,126 +70,107 @@ export async function POST(
         method: "GET",
         headers: {
           Authorization: `Bearer ${paystackSecretKey}`,
-          Accept: "application/json",
         },
         cache: "no-store",
       }
     );
 
     const verification =
-      (await paystackResponse.json()) as
-        PaystackVerificationResponse;
+      (await paystackResponse.json()) as PaystackVerification;
 
     if (
       !paystackResponse.ok ||
       !verification.status ||
       !verification.data
     ) {
+      console.error(
+        "Paystack verification failed:",
+        verification
+      );
+
       return NextResponse.json(
         {
           error:
-            verification.message ||
-            "Paystack could not verify this payment.",
+            verification.message ??
+            "Unable to verify payment.",
         },
         { status: 400 }
       );
     }
 
-    const payment = verification.data;
+    const transaction = verification.data;
 
-    /*
-     * response.status only confirms the API call.
-     * payment.status confirms the actual transaction.
-     */
-    if (payment.status !== "success") {
+    if (transaction.status !== "success") {
       return NextResponse.json(
-        {
-          error: `Payment status is ${payment.status}.`,
-          paymentStatus: payment.status,
-        },
+        { error: "Payment was not successful." },
         { status: 400 }
       );
     }
 
-    if (payment.reference !== reference) {
+    if (transaction.reference !== reference) {
       return NextResponse.json(
-        {
-          error:
-            "The verified reference does not match the submitted reference.",
-        },
+        { error: "Transaction reference mismatch." },
         { status: 400 }
       );
     }
 
     if (
-      payment.currency?.toUpperCase() !==
-      "GHS"
+      transaction.metadata?.purpose !==
+      "wallet_deposit"
     ) {
       return NextResponse.json(
-        {
-          error:
-            "The verified payment currency is not GHS.",
-        },
+        { error: "Invalid transaction purpose." },
         { status: 400 }
       );
     }
 
-    const verifiedEmail =
-      payment.customer?.email
-        ?.trim()
-        .toLowerCase();
+    const walletId =
+      transaction.metadata?.wallet_id;
 
-    const authenticatedEmail =
-      user.email?.trim().toLowerCase();
+    const metadataCurrency =
+      transaction.metadata?.currency?.toUpperCase();
 
-    if (
-      !verifiedEmail ||
-      !authenticatedEmail ||
-      verifiedEmail !== authenticatedEmail
-    ) {
+    const transactionCurrency =
+      transaction.currency?.toUpperCase();
+
+    if (!walletId) {
       return NextResponse.json(
-        {
-          error:
-            "This payment does not belong to the signed-in account.",
-        },
-        { status: 403 }
-      );
-    }
-
-    /*
-     * Paystack returns amounts in the currency's
-     * smallest denomination, so GHS 100 is 10000.
-     */
-    const amountInSubunits = Number(
-      payment.amount
-    );
-
-    if (
-      !Number.isInteger(amountInSubunits) ||
-      amountInSubunits <= 0
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Paystack returned an invalid payment amount.",
-        },
+        { error: "Wallet information is missing." },
         { status: 400 }
       );
     }
 
-    const amountInGhs =
-      amountInSubunits / 100;
+    if (
+      !metadataCurrency ||
+      metadataCurrency !== transactionCurrency
+    ) {
+      return NextResponse.json(
+        { error: "Transaction currency mismatch." },
+        { status: 400 }
+      );
+    }
 
-    const paidAt =
-      payment.paid_at ?? new Date().toISOString();
+    const amountMajor =
+      Number(transaction.amount) / 100;
 
-    /*
-     * Use the server-only service-role client to
-     * call the protected atomic credit function.
-     */
-    const adminClient = createClient(
+    const expectedAmount =
+      Number(transaction.metadata?.amount_major);
+
+    if (
+      !Number.isFinite(amountMajor) ||
+      amountMajor <= 0 ||
+      !Number.isFinite(expectedAmount) ||
+      Math.abs(amountMajor - expectedAmount) > 0.000001
+    ) {
+      return NextResponse.json(
+        { error: "Transaction amount mismatch." },
+        { status: 400 }
+      );
+    }
+
+    const adminSupabase = createClient(
       supabaseUrl,
-      supabaseServiceRoleKey,
+      serviceRoleKey,
       {
         auth: {
           persistSession: false,
@@ -297,72 +179,45 @@ export async function POST(
       }
     );
 
-    const {
-      data: creditData,
-      error: creditError,
-    } = await adminClient.rpc(
-      "credit_verified_paystack_deposit",
-      {
-        p_user_id: user.id,
-        p_reference: payment.reference,
-        p_amount: amountInGhs,
-        p_currency:
-          payment.currency.toUpperCase(),
-        p_paystack_transaction_id: String(
-          payment.id
-        ),
-        p_paid_at: paidAt,
-      }
-    );
+    const { error: settlementError } =
+      await adminSupabase.rpc(
+        "settle_paystack_deposit",
+        {
+          p_wallet_id: walletId,
+          p_currency: transactionCurrency,
+          p_amount: amountMajor,
+          p_reference: reference,
+          p_provider_transaction_id:
+            String(transaction.id),
+        }
+      );
 
-    if (creditError) {
+    if (settlementError) {
       console.error(
-        "Wallet credit RPC error:",
-        creditError
+        "Deposit settlement failed:",
+        settlementError
       );
 
       return NextResponse.json(
-        {
-          error:
-            "The payment was verified, but the wallet could not be credited.",
-        },
+        { error: "Unable to credit wallet." },
         { status: 500 }
       );
     }
 
-    const result =
-      creditData as CreditDepositResult;
-
-    return NextResponse.json(
-      {
-        success: true,
-        reference: payment.reference,
-        amount: amountInGhs,
-        currency:
-          payment.currency.toUpperCase(),
-        alreadyCredited:
-          Boolean(result.already_credited),
-        walletBalance: Number(
-          result.wallet_balance
-        ),
-        transactionId:
-          result.transaction_id,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({
+      success: true,
+      reference,
+      amount: amountMajor,
+      currency: transactionCurrency,
+    });
   } catch (error) {
     console.error(
-      "Paystack verification error:",
+      "Unexpected verification error:",
       error
     );
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to verify the Paystack payment.",
-      },
+      { error: "Unable to verify payment." },
       { status: 500 }
     );
   }

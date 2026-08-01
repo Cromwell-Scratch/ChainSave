@@ -1,83 +1,25 @@
-import { createHmac, timingSafeEqual } from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-type PaystackMetadata = {
-  chainsave_user_id?: string;
-  deposit_amount?: number | string;
-  purpose?: string;
+type PaystackTransferEvent = {
+  event: string;
+  data?: {
+    id?: number;
+    amount?: number;
+    currency?: string;
+    reference?: string;
+    transfer_code?: string;
+    recipient?: {
+      recipient_code?: string;
+    };
+    reason?: string;
+    status?: string;
+    failures?: unknown;
+  };
 };
 
-type PaystackChargeData = {
-  id: number | string;
-  status: string;
-  reference: string;
-  amount: number;
-  currency: string;
-  paid_at: string | null;
-  metadata?: PaystackMetadata | string | null;
-};
-
-type PaystackWebhookEvent = {
-  event?: string;
-  data?: PaystackChargeData;
-};
-
-function parseMetadata(
-  metadata: PaystackChargeData["metadata"]
-): PaystackMetadata {
-  if (!metadata) {
-    return {};
-  }
-
-  if (typeof metadata === "object") {
-    return metadata;
-  }
-
-  try {
-    return JSON.parse(metadata) as PaystackMetadata;
-  } catch {
-    return {};
-  }
-}
-
-function signaturesMatch(
-  receivedSignature: string,
-  expectedSignature: string
-) {
-  try {
-    const receivedBuffer = Buffer.from(
-      receivedSignature,
-      "hex"
-    );
-
-    const expectedBuffer = Buffer.from(
-      expectedSignature,
-      "hex"
-    );
-
-    if (
-      receivedBuffer.length === 0 ||
-      receivedBuffer.length !== expectedBuffer.length
-    ) {
-      return false;
-    }
-
-    return timingSafeEqual(
-      receivedBuffer,
-      expectedBuffer
-    );
-  } catch {
-    return false;
-  }
-}
-
-export async function POST(
-  request: NextRequest
-) {
+export async function POST(request: NextRequest) {
   try {
     const paystackSecretKey =
       process.env.PAYSTACK_SECRET_KEY;
@@ -85,248 +27,107 @@ export async function POST(
     const supabaseUrl =
       process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-    const supabaseServiceRoleKey =
+    const serviceRoleKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (
       !paystackSecretKey ||
       !supabaseUrl ||
-      !supabaseServiceRoleKey
+      !serviceRoleKey
     ) {
       console.error(
-        "Paystack webhook environment variables are missing."
+        "Paystack webhook configuration is incomplete."
       );
 
       return NextResponse.json(
-        { received: false },
+        { error: "Server configuration is incomplete." },
         { status: 500 }
       );
     }
 
     /*
-     * Read the raw request body before parsing JSON.
-     * Paystack's signature is generated from the
-     * original payload bytes.
+     * The signature must be calculated from the exact raw
+     * body received from Paystack.
      */
     const rawBody = await request.text();
 
     const receivedSignature =
-      request.headers.get(
-        "x-paystack-signature"
-      );
+      request.headers.get("x-paystack-signature");
 
     if (!receivedSignature) {
       return NextResponse.json(
-        {
-          received: false,
-          error: "Webhook signature is missing.",
-        },
+        { error: "Missing Paystack signature." },
         { status: 401 }
       );
     }
 
-    const expectedSignature = createHmac(
-      "sha512",
-      paystackSecretKey
-    )
+    const expectedSignature = crypto
+      .createHmac("sha512", paystackSecretKey)
       .update(rawBody)
       .digest("hex");
 
+    const receivedBuffer = Buffer.from(
+      receivedSignature,
+      "utf8"
+    );
+
+    const expectedBuffer = Buffer.from(
+      expectedSignature,
+      "utf8"
+    );
+
     if (
-      !signaturesMatch(
-        receivedSignature,
-        expectedSignature
+      receivedBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(
+        receivedBuffer,
+        expectedBuffer
       )
     ) {
-      console.error(
-        "Invalid Paystack webhook signature."
-      );
+      console.error("Invalid Paystack webhook signature.");
 
       return NextResponse.json(
-        {
-          received: false,
-          error: "Invalid webhook signature.",
-        },
+        { error: "Invalid webhook signature." },
         { status: 401 }
       );
     }
 
     const payload = JSON.parse(
       rawBody
-    ) as PaystackWebhookEvent;
-
-    /*
-     * Ignore webhook events ChainSave does not use.
-     * Returning 200 tells Paystack the event was received.
-     */
-    if (payload.event !== "charge.success") {
-      return NextResponse.json(
-        {
-          received: true,
-          ignored: true,
-        },
-        { status: 200 }
-      );
-    }
-
-    const payment = payload.data;
-
-    if (!payment) {
-      return NextResponse.json(
-        {
-          received: false,
-          error: "Webhook payment data is missing.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (payment.status !== "success") {
-      return NextResponse.json(
-        {
-          received: true,
-          ignored: true,
-        },
-        { status: 200 }
-      );
-    }
+    ) as PaystackTransferEvent;
 
     const reference =
-      payment.reference?.trim();
-
-    if (!reference) {
-      return NextResponse.json(
-        {
-          received: false,
-          error: "Payment reference is missing.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (
-      payment.currency?.toUpperCase() !==
-      "GHS"
-    ) {
-      console.error(
-        "Rejected non-GHS Paystack deposit:",
-        payment.currency
-      );
-
-      return NextResponse.json(
-        {
-          received: false,
-          error: "Unsupported payment currency.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const amountInPesewas = Number(
-      payment.amount
-    );
-
-    if (
-      !Number.isInteger(amountInPesewas) ||
-      amountInPesewas <= 0
-    ) {
-      return NextResponse.json(
-        {
-          received: false,
-          error: "Payment amount is invalid.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const metadata = parseMetadata(
-      payment.metadata
-    );
-
-    if (
-      metadata.purpose !== "wallet_deposit"
-    ) {
-      return NextResponse.json(
-        {
-          received: true,
-          ignored: true,
-        },
-        { status: 200 }
-      );
-    }
-
-    const userId =
-      metadata.chainsave_user_id?.trim();
-
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    if (
-      !userId ||
-      !uuidPattern.test(userId)
-    ) {
-      console.error(
-        "Paystack webhook has an invalid ChainSave user ID."
-      );
-
-      return NextResponse.json(
-        {
-          received: false,
-          error: "Invalid ChainSave user ID.",
-        },
-        { status: 400 }
-      );
-    }
+      payload.data?.reference?.trim();
 
     /*
-     * Confirm that the amount received matches the
-     * amount ChainSave placed in the metadata.
+     * Acknowledge unrelated Paystack events without
+     * attempting to process them.
      */
-    const expectedDepositAmount = Number(
-      metadata.deposit_amount
-    );
-
-    const expectedPesewas = Math.round(
-      expectedDepositAmount * 100
-    );
-
     if (
-      !Number.isFinite(
-        expectedDepositAmount
-      ) ||
-      expectedDepositAmount <= 0 ||
-      expectedPesewas !== amountInPesewas
+      payload.event !== "transfer.success" &&
+      payload.event !== "transfer.failed" &&
+      payload.event !== "transfer.reversed"
     ) {
+      return NextResponse.json({
+        received: true,
+        ignored: true,
+      });
+    }
+
+    if (!reference) {
       console.error(
-        "Paystack deposit amount mismatch:",
-        {
-          reference,
-          expectedPesewas,
-          receivedPesewas:
-            amountInPesewas,
-        }
+        "Transfer webhook is missing its reference.",
+        payload
       );
 
       return NextResponse.json(
-        {
-          received: false,
-          error:
-            "Verified payment amount does not match the initialized deposit.",
-        },
+        { error: "Transfer reference is missing." },
         { status: 400 }
       );
     }
 
-    const amountInGhs =
-      amountInPesewas / 100;
-
-    const paidAt =
-      payment.paid_at ??
-      new Date().toISOString();
-
-    const adminClient = createClient(
+    const adminSupabase = createClient(
       supabaseUrl,
-      supabaseServiceRoleKey,
+      serviceRoleKey,
       {
         auth: {
           persistSession: false,
@@ -336,78 +137,178 @@ export async function POST(
     );
 
     /*
-     * The RPC updates the balance, records the
-     * transaction, creates a notification and
-     * prevents duplicate references.
+     * Confirm that this reference belongs to a withdrawal
+     * created by ChainSave.
      */
     const {
-      data: creditData,
-      error: creditError,
-    } = await adminClient.rpc(
-      "credit_verified_paystack_deposit",
-      {
-        p_user_id: userId,
-        p_reference: reference,
-        p_amount: amountInGhs,
-        p_currency: "GHS",
-        p_paystack_transaction_id: String(
-          payment.id
-        ),
-        p_paid_at: paidAt,
-      }
-    );
+      data: withdrawal,
+      error: withdrawalError,
+    } = await adminSupabase
+      .from("wallet_withdrawals")
+      .select(
+        `
+          id,
+          amount,
+          currency,
+          status,
+          provider_reference
+        `
+      )
+      .eq("provider_reference", reference)
+      .maybeSingle();
 
-    if (creditError) {
+    if (withdrawalError) {
       console.error(
-        "Paystack webhook wallet credit error:",
-        creditError
+        "Unable to load webhook withdrawal:",
+        withdrawalError
       );
 
-      /*
-       * Return an error so Paystack can retry
-       * delivery rather than silently losing it.
-       */
       return NextResponse.json(
-        {
-          received: false,
-          error:
-            "Wallet could not be credited.",
-        },
+        { error: "Unable to load withdrawal." },
         { status: 500 }
       );
     }
 
-    console.log(
-      "Paystack wallet deposit processed:",
-      {
-        reference,
-        userId,
-        amount: amountInGhs,
-        result: creditData,
-      }
-    );
+    if (!withdrawal) {
+      /*
+       * Respond successfully so Paystack does not repeatedly
+       * retry an event that is unrelated to this system.
+       */
+      console.warn(
+        "Withdrawal not found for Paystack reference:",
+        reference
+      );
 
-    return NextResponse.json(
-      {
+      return NextResponse.json({
         received: true,
-        processed: true,
-      },
-      { status: 200 }
-    );
+        ignored: true,
+      });
+    }
+
+    const webhookCurrency =
+      payload.data?.currency?.toUpperCase();
+
+    const webhookAmount =
+      Number(payload.data?.amount ?? 0) / 100;
+
+    if (
+      webhookCurrency &&
+      webhookCurrency !== withdrawal.currency
+    ) {
+      console.error(
+        "Withdrawal webhook currency mismatch.",
+        {
+          reference,
+          expected: withdrawal.currency,
+          received: webhookCurrency,
+        }
+      );
+
+      return NextResponse.json(
+        { error: "Withdrawal currency mismatch." },
+        { status: 400 }
+      );
+    }
+
+    if (
+      Number.isFinite(webhookAmount) &&
+      webhookAmount > 0 &&
+      Math.abs(
+        webhookAmount - Number(withdrawal.amount)
+      ) > 0.000001
+    ) {
+      console.error(
+        "Withdrawal webhook amount mismatch.",
+        {
+          reference,
+          expected: withdrawal.amount,
+          received: webhookAmount,
+        }
+      );
+
+      return NextResponse.json(
+        { error: "Withdrawal amount mismatch." },
+        { status: 400 }
+      );
+    }
+
+    if (payload.event === "transfer.success") {
+      const { error: completionError } =
+        await adminSupabase.rpc(
+          "complete_wallet_withdrawal",
+          {
+            p_provider_reference: reference,
+            p_provider_recipient_code:
+              payload.data?.recipient?.recipient_code ??
+              "",
+            p_provider_transfer_code:
+              payload.data?.transfer_code ??
+              String(payload.data?.id ?? ""),
+          }
+        );
+
+      if (completionError) {
+        console.error(
+          "Unable to complete withdrawal:",
+          completionError
+        );
+
+        return NextResponse.json(
+          { error: "Unable to complete withdrawal." },
+          { status: 500 }
+        );
+      }
+    }
+
+    if (
+      payload.event === "transfer.failed" ||
+      payload.event === "transfer.reversed"
+    ) {
+      const releaseStatus =
+        payload.event === "transfer.reversed"
+          ? "reversed"
+          : "failed";
+
+      const failureReason =
+        payload.data?.reason ??
+        `Paystack reported ${releaseStatus}.`;
+
+      const { error: releaseError } =
+        await adminSupabase.rpc(
+          "release_wallet_withdrawal",
+          {
+            p_provider_reference: reference,
+            p_status: releaseStatus,
+            p_failure_reason: failureReason,
+          }
+        );
+
+      if (releaseError) {
+        console.error(
+          "Unable to release withdrawal:",
+          releaseError
+        );
+
+        return NextResponse.json(
+          { error: "Unable to release withdrawal." },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({
+      received: true,
+      event: payload.event,
+      reference,
+    });
   } catch (error) {
     console.error(
-      "Paystack webhook processing error:",
+      "Unexpected Paystack webhook error:",
       error
     );
 
     return NextResponse.json(
-      {
-        received: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Webhook processing failed.",
-      },
+      { error: "Unable to process webhook." },
       { status: 500 }
     );
   }

@@ -288,31 +288,90 @@ export default function MyCirclesPage() {
           <Topbar />
 
           <section className="p-6 lg:p-8">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-green-700">
-                  Savings circles
-                </p>
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-900 via-green-700 to-lime-500 p-8 text-white shadow-2xl">
 
-                <h1 className="mt-2 text-4xl font-bold text-gray-900">
-                  My Circles
-                </h1>
+  <div className="absolute inset-0 opacity-20">
+    <svg
+      className="h-full w-full"
+      viewBox="0 0 1200 320"
+    >
+      <path
+        d="M0 220 C180 150 320 260 520 210 S820 120 1200 220V320H0Z"
+        fill="#DCFCE7"
+      />
+    </svg>
+  </div>
 
-                <p className="mt-2 text-gray-600">
-                  View the savings circles you own
-                  and the circles you have joined.
-                </p>
-              </div>
+  <div className="relative flex flex-col gap-8 xl:flex-row xl:items-center xl:justify-between">
 
-              <Button
-                onClick={() =>
-                  router.push("/create-circle")
-                }
-              >
-                <Plus className="mr-2 h-5 w-5" />
-                Create Circle
-              </Button>
-            </div>
+    <div>
+
+      <p className="text-sm uppercase tracking-[0.25em] text-green-100">
+        ChainSave Workspace
+      </p>
+
+      <h1 className="mt-3 text-4xl font-bold">
+        My Savings Circles
+      </h1>
+
+      <p className="mt-3 max-w-2xl text-green-50">
+        Manage every savings circle you've created or joined,
+        monitor progress and access each circle quickly.
+      </p>
+
+      <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+
+        <HeroStat
+          label="Owned"
+          value={ownedCircles.length}
+        />
+
+        <HeroStat
+          label="Joined"
+          value={joinedCircles.length}
+        />
+
+        <HeroStat
+          label="Total"
+          value={
+            ownedCircles.length +
+            joinedCircles.length
+          }
+        />
+
+        <HeroStat
+          label="Active"
+          value={
+            ownedCircles.filter(
+              circle => !circle.completed
+            ).length +
+            joinedCircles.filter(
+              circle => !circle.completed
+            ).length
+          }
+        />
+
+      </div>
+
+    </div>
+
+    <div>
+
+      <Button
+        onClick={() =>
+          router.push("/create-circle")
+        }
+        className="rounded-2xl bg-emerald-700 px-8 py-4 text-white hover:bg-white hover:text-emerald-700 transition-colors"
+      >
+        <Plus className="mr-2 h-5 w-5" />
+        Create Circle
+      </Button>
+
+    </div>
+
+  </div>
+
+</div>
 
             {loading && (
               <p className="mt-8 text-gray-600">
@@ -825,4 +884,23 @@ function formatDate(date: string | null) {
     month: "short",
     year: "numeric",
   });
+}
+function HeroStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-md">
+      <p className="text-xs uppercase tracking-wide text-green-100">
+        {label}
+      </p>
+
+      <h3 className="mt-2 text-3xl font-bold">
+        {value}
+      </h3>
+    </div>
+  );
 }
