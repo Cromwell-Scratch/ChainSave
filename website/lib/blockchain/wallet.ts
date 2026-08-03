@@ -11,23 +11,27 @@ import {
   ROOTSTOCK_TESTNET_RPC_URL,
 } from "@/lib/blockchain/rootstock";
 
-declare global {
-  interface Window {
-    ethereum?: Eip1193Provider;
-  }
-}
 
 function getEthereumProvider(): Eip1193Provider {
-  if (
-    typeof window === "undefined" ||
-    !window.ethereum
-  ) {
+  if (typeof window === "undefined") {
     throw new Error(
-      "MetaMask is not installed. Install MetaMask and try again."
+      "Wallet connections are only available in the browser."
     );
   }
 
-  return window.ethereum;
+  const ethereum = (
+    window as Window & {
+      ethereum?: Eip1193Provider;
+    }
+  ).ethereum;
+
+  if (!ethereum) {
+    throw new Error(
+      "No browser wallet was detected. Please install or connect a compatible wallet."
+    );
+  }
+
+  return ethereum;
 }
 
 async function switchToRootstockTestnet(

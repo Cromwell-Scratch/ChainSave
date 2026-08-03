@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  connectRootstockWallet,
-  getWalletBalance,
-} from "@/lib/blockchain/wallet";
-
+import { useRootstockWallet } from "@/hooks/useRootstockWallet";
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -117,6 +113,19 @@ function getErrorMessage(error: unknown): string {
 }
 
 export default function WalletPage() {
+const {
+  address: connectedWalletAddress,
+  normalizedAddress,
+  isConnected,
+  isRootstockTestnet,
+  chainId,
+  walletProvider,
+  explorerUrl,
+  connectWallet,
+  disconnectWallet,
+  getBalance,
+} = useRootstockWallet();
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -183,32 +192,15 @@ const [rootstockBalance, setRootstockBalance] =
       setBalances(balancesData);
       setLedger(ledgerData);
       setAddress(addressData);
-if (addressData?.is_active && addressData.address) {
-  try {
-    const liveBalance = await getWalletBalance(
-      addressData.address
-    );
+const savedBalance = Number(
+  addressData?.metadata?.balance ?? "0"
+);
 
-    setRootstockBalance(liveBalance);
-  } catch (balanceError) {
-    console.log(
-      "Unable to fetch live Rootstock balance:",
-      balanceError
-    );
-
-    const savedBalance = Number(
-      addressData.metadata?.balance ?? "0"
-    );
-
-    setRootstockBalance(
-      Number.isFinite(savedBalance)
-        ? String(savedBalance)
-        : "0"
-    );
-  }
-} else {
-  setRootstockBalance("0");
-}
+setRootstockBalance(
+  addressData?.is_active && Number.isFinite(savedBalance)
+    ? String(savedBalance)
+    : "0"
+);
       setPreferences(preferenceData);
       setRates(rateMap);
     } catch (loadError) {
@@ -227,7 +219,7 @@ if (addressData?.is_active && addressData.address) {
   useEffect(() => {
     void loadWallet();
   }, [loadWallet]);
-  
+
 
   useEffect(() => {
   const depositStatus = searchParams.get("deposit");
@@ -392,24 +384,34 @@ if (addressData?.is_active && addressData.address) {
     }
   }
 
-  async function handleConnectRootstockWallet() {
+const saveConnectedRootstockWallet = useCallback(async () => {
   try {
+    if (
+      !isConnected ||
+      !connectedWalletAddress ||
+      !walletProvider ||
+      !wallet?.id
+    ) {
+      return;
+    }
+
     setConnectingRootstock(true);
     setError("");
     setNotice("");
 
-    if (!wallet?.id) {
-      throw new Error(
-        "Your ChainSave wallet could not be found."
-      );
-    }
+    if (!isRootstockTestnet) {
+  throw new Error(
+    "Please switch your connected wallet to Rootstock Testnet."
+  );
+}
 
-    const connection =
-      await connectRootstockWallet();
+const liveBalance = await getBalance();
 
-    const normalizedAddress =
-      connection.address.toLowerCase();
-
+if (!normalizedAddress) {
+  throw new Error(
+    "The connected wallet address is unavailable."
+  );
+}
     const {
       data: existingAddress,
       error: existingAddressError,
@@ -428,16 +430,16 @@ if (addressData?.is_active && addressData.address) {
 
     const addressPayload = {
       wallet_id: wallet.id,
-     network: "rootstock",
+      network: "rootstock",
       address: normalizedAddress,
       is_primary: true,
       is_active: true,
       metadata: {
-        chain_id: connection.chainId,
+        chain_id: Number(chainId),
         native_currency: "tRBTC",
-        balance: connection.balance,
-        explorer_url: connection.explorerUrl,
-        provider: "MetaMask",
+        balance: liveBalance,
+        explorer_url: explorerUrl,
+        provider: "Reown AppKit",
         connected_at: now,
       },
       updated_at: now,
@@ -465,36 +467,66 @@ if (addressData?.is_active && addressData.address) {
       }
     }
 
-    setRootstockBalance(connection.balance);
+    setAddress((currentAddress) => ({
+  ...(currentAddress ?? {}),
+  ...addressPayload,
+  id: existingAddress?.id ?? currentAddress?.id,
+} as WalletAddress));
+
+    setRootstockBalance(liveBalance);
 
     setNotice(
       `Rootstock wallet connected successfully. Balance: ${Number(
-        connection.balance
+        liveBalance
       ).toFixed(8)} tRBTC.`
     );
-
-    await loadWallet(true);
   } catch (connectionError) {
-  const message =
-    getErrorMessage(connectionError) ||
-    "Unable to connect the Rootstock wallet.";
+    const message =
+      getErrorMessage(connectionError) ||
+      "Unable to save the connected Rootstock wallet.";
 
-  // Use console.log temporarily so Next.js does not
-  // cover the page with its console-error overlay.
-  console.log(
-    "Rootstock wallet connection failed:",
-    message,
-    connectionError
-  );
+    console.log(
+      "Rootstock wallet synchronization failed:",
+      connectionError
+    );
 
-  setError(message);
-} finally {
+    setError(message);
+  } finally {
     setConnectingRootstock(false);
   }
-}
+}, [
+  chainId,
+  connectedWalletAddress,
+  explorerUrl,
+  getBalance,
+  isConnected,
+  isRootstockTestnet,
+  normalizedAddress,
+  wallet,
+  walletProvider,
+]);
+  useEffect(() => {
+  if (
+    !loading &&
+    isConnected &&
+    connectedWalletAddress &&
+    walletProvider &&
+    wallet?.id
+  ) {
+    void saveConnectedRootstockWallet();
+  }
+}, [
+  connectedWalletAddress,
+  isConnected,
+  loading,
+  saveConnectedRootstockWallet,
+  wallet,
+  walletProvider,
+]);
 
 async function handleDisconnectRootstockWallet() {
   try {
+    setConnectingRootstock(true);
     setError("");
     setNotice("");
 
@@ -504,6 +536,10 @@ async function handleDisconnectRootstockWallet() {
       );
     }
 
+    // Disconnect the active Reown EVM wallet session.
+    await disconnectWallet();
+
+    // Mark the saved ChainSave wallet address as inactive.
     const { error: disconnectError } = await supabase
       .from("wallet_addresses")
       .update({
@@ -511,11 +547,20 @@ async function handleDisconnectRootstockWallet() {
         updated_at: new Date().toISOString(),
       })
       .eq("wallet_id", wallet.id)
-      .eq("network", "rootstock_testnet");
+      .eq("network", "rootstock");
 
     if (disconnectError) {
       throw disconnectError;
     }
+
+    setAddress((currentAddress) =>
+      currentAddress
+        ? {
+            ...currentAddress,
+            is_active: false,
+          }
+        : null
+    );
 
     setRootstockBalance("0");
 
@@ -535,6 +580,8 @@ async function handleDisconnectRootstockWallet() {
         ? disconnectError.message
         : "Unable to disconnect the Rootstock wallet."
     );
+  } finally {
+    setConnectingRootstock(false);
   }
 }
 
@@ -865,16 +912,14 @@ async function handleDisconnectRootstockWallet() {
   isActive={Boolean(
     address?.address && address?.is_active
   )}
-  provider="MetaMask"
+  provider="Reown AppKit"
   explorerUrl={
     address?.address
       ? `https://explorer.testnet.rootstock.io/address/${address.address}`
       : undefined
   }
 onConnect={() => {
-  if (!connectingRootstock) {
-    void handleConnectRootstockWallet();
-  }
+  void connectWallet();
 }}
 onDisconnect={() => {
   if (!connectingRootstock) {
