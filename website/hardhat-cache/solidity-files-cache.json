@@ -189,8 +189,8 @@
       ]
     },
     "C:\\Users\\Administrator\\Desktop\\ChainSave\\website\\contracts\\SavingsCircle.sol": {
-      "lastModificationDate": 1785777241438,
-      "contentHash": "398427d4e3c9b4d2bf2b91a4c9d31825",
+      "lastModificationDate": 1785779765945,
+      "contentHash": "91cbb0cc722070313b3483907bb4c759",
       "sourceName": "contracts/SavingsCircle.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -229,8 +229,8 @@
       ]
     },
     "C:\\Users\\Administrator\\Desktop\\ChainSave\\website\\contracts\\SavingsFactory.sol": {
-      "lastModificationDate": 1785777901065,
-      "contentHash": "7d6c6e6732c559fc6309519f3963b2bc",
+      "lastModificationDate": 1785778223597,
+      "contentHash": "3a20e19bd15c21d59426327470f3cd52",
       "sourceName": "contracts/SavingsFactory.sol",
       "solcConfig": {
         "version": "0.8.24",

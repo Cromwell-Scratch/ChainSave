@@ -1,5 +1,20 @@
 "use client";
 
+import { useRootstockWallet } from "@/hooks/useRootstockWallet";
+import {
+  BrowserProvider,
+  Contract,
+  ZeroAddress,
+  id,
+  parseEther,
+} from "ethers";
+
+import {
+  SAVINGS_CIRCLE_ABI,
+  SAVINGS_FACTORY_ABI,
+  SAVINGS_FACTORY_ADDRESS,
+} from "@/lib/blockchain/contracts";
+
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +45,13 @@ const TOTAL_STEPS = 4;
 
 export default function CreateCirclePage() {
   const router = useRouter();
+  const {
+  address,
+  isConnected,
+  isRootstockTestnet,
+  walletProvider,
+  connectWallet,
+} = useRootstockWallet();
 
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -207,7 +229,6 @@ export default function CreateCirclePage() {
 ) {
   event.preventDefault();
 
-  // Do not submit the form before the Review & Launch step.
   if (currentStep !== TOTAL_STEPS) {
     return;
   }
@@ -215,131 +236,374 @@ export default function CreateCirclePage() {
   setLoading(true);
   setMessage("");
 
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+  let deployedContractAddress = "";
+  let creationTransactionHash = "";
 
-      if (userError) {
-        throw userError;
-      }
+  try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+    if (userError) {
+      throw userError;
+    }
 
-      if (!user.email) {
-        setMessage(
-          "Your account must have an email address before creating a circle."
-        );
-        return;
-      }
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-      const numericAmount = Number(contributionAmount);
-      const numericMaxMembers = Number(maxMembers);
+    if (!user.email) {
+      throw new Error(
+        "Your account must have an email address before creating a circle."
+      );
+    }
+
+    const numericAmount = Number(contributionAmount);
+    const numericMaxMembers = Number(maxMembers);
+
+    if (
+      !Number.isFinite(numericAmount) ||
+      numericAmount <= 0
+    ) {
+      setCurrentStep(2);
+
+      throw new Error(
+        "Enter a valid contribution amount."
+      );
+    }
+
+    if (
+      !Number.isInteger(numericMaxMembers) ||
+      numericMaxMembers < 2 ||
+      numericMaxMembers > 100
+    ) {
+      setCurrentStep(2);
+
+      throw new Error(
+        "Maximum members must be between 2 and 100."
+      );
+    }
+
+    /*
+     * Reown may need to open the wallet selector first.
+     * After connecting, the user clicks Launch Circle again.
+     */
+    if (
+      !isConnected ||
+      !address ||
+      !walletProvider
+    ) {
+      await connectWallet();
+
+      throw new Error(
+        "Connect your Rootstock wallet, then click Launch Circle again."
+      );
+    }
+
+    if (!isRootstockTestnet) {
+      throw new Error(
+        "Switch your wallet to Rootstock Testnet before creating the circle."
+      );
+    }
+
+    /*
+     * Convert the local-currency contribution amount
+     * into the matching tRBTC contract amount.
+     */
+    const { data: exchangeRateRows, error: rateError } =
+      await supabase
+        .from("exchange_rates")
+        .select(
+          "base_currency, quote_currency, rate"
+        )
+        .in("base_currency", [currency, "RBTC"])
+        .in("quote_currency", [currency, "RBTC"]);
+
+    if (rateError) {
+      throw rateError;
+    }
+
+    const directRate = exchangeRateRows?.find(
+      (row) =>
+        row.base_currency === currency &&
+        row.quote_currency === "RBTC"
+    );
+
+    const inverseRate = exchangeRateRows?.find(
+      (row) =>
+        row.base_currency === "RBTC" &&
+        row.quote_currency === currency
+    );
+
+    let rbtcRate: number | null = null;
+
+    if (directRate) {
+      const parsedRate = Number(directRate.rate);
 
       if (
-        !Number.isFinite(numericAmount) ||
-        numericAmount <= 0
+        Number.isFinite(parsedRate) &&
+        parsedRate > 0
       ) {
-        setMessage("Enter a valid contribution amount.");
-        setCurrentStep(2);
-        return;
+        rbtcRate = parsedRate;
       }
+    } else if (inverseRate) {
+      const parsedRate = Number(inverseRate.rate);
 
       if (
-        !Number.isInteger(numericMaxMembers) ||
-        numericMaxMembers < 2 ||
-        numericMaxMembers > 100
+        Number.isFinite(parsedRate) &&
+        parsedRate > 0
       ) {
-        setMessage(
-          "Maximum members must be between 2 and 100."
-        );
-        setCurrentStep(2);
-        return;
+        rbtcRate = 1 / parsedRate;
       }
+    }
 
-      const normalizedOwnerEmail = user.email
-        .trim()
-        .toLowerCase();
+    if (rbtcRate === null) {
+      throw new Error(
+        `No ${currency} to RBTC exchange rate is currently available.`
+      );
+    }
 
-      const invitationsWithoutOwner =
-        invitedMembers.filter(
-          (email) => email !== normalizedOwnerEmail
-        );
+    const rbtcContribution = numericAmount * rbtcRate;
 
-      const { data: newCircle, error: circleError } =
-        await supabase
-          .from("circles")
-          .insert({
-            owner_id: user.id,
-            name: circleName.trim(),
-            description: description.trim(),
-            contribution_amount: numericAmount,
-            currency,
-            contribution_frequency: frequency,
-            max_members: numericMaxMembers,
-            start_date: startDate || null,
-            privacy,
-          })
-          .select("id")
-          .single();
+    if (
+      !Number.isFinite(rbtcContribution) ||
+      rbtcContribution <= 0
+    ) {
+      throw new Error(
+        "Unable to calculate the Rootstock contribution amount."
+      );
+    }
 
-      if (circleError) {
-        throw circleError;
-      }
+    /*
+     * Convert the calculated value to a clean decimal
+     * accepted by ethers.parseEther().
+     */
+    const rbtcContributionText =
+      rbtcContribution
+        .toFixed(18)
+        .replace(/0+$/, "")
+        .replace(/\.$/, "");
 
-      const ownerMembership = {
-        circle_id: newCircle.id,
-        user_id: user.id,
-        email: normalizedOwnerEmail,
-        role: "owner",
-        status: "accepted",
-        joined_at: new Date().toISOString(),
+    const contributionAmountWei = parseEther(
+      rbtcContributionText
+    );
+
+    /*
+     * Generate the Supabase UUID before the transaction.
+     * The same UUID is used to derive the bytes32 ID.
+     */
+    const databaseCircleId = crypto.randomUUID();
+
+    const blockchainCircleId = id(
+      `chainsave-circle:${databaseCircleId}`
+    );
+
+    const provider = new BrowserProvider(
+      walletProvider
+    );
+
+    const network = await provider.getNetwork();
+
+    if (Number(network.chainId) !== 31) {
+      throw new Error(
+        "Your wallet is not connected to Rootstock Testnet."
+      );
+    }
+
+    const signer = await provider.getSigner();
+    const signerAddress = await signer.getAddress();
+
+    const factory = new Contract(
+      SAVINGS_FACTORY_ADDRESS,
+      SAVINGS_FACTORY_ABI,
+      signer
+    );
+
+    /*
+     * Transaction 1:
+     * Deploy the SavingsCircle through SavingsFactory.
+     */
+    const createTransaction =
+      await factory.createCircle(
+        blockchainCircleId,
+        contributionAmountWei,
+        numericMaxMembers
+      );
+
+    creationTransactionHash =
+      createTransaction.hash;
+
+    const createReceipt =
+      await createTransaction.wait();
+
+    if (!createReceipt || createReceipt.status !== 1) {
+      throw new Error(
+        "The Rootstock circle creation transaction failed."
+      );
+    }
+
+    const circleContractAddress =
+      await factory.circleById(
+        blockchainCircleId
+      );
+
+    if (
+      !circleContractAddress ||
+      circleContractAddress === ZeroAddress
+    ) {
+      throw new Error(
+        "Rootstock did not return the deployed circle contract address."
+      );
+    }
+
+    deployedContractAddress =
+      String(circleContractAddress);
+
+    /*
+     * Transaction 2:
+     * Add the creator as the first on-chain member.
+     */
+    const circleContract = new Contract(
+      deployedContractAddress,
+      SAVINGS_CIRCLE_ABI,
+      signer
+    );
+
+    const ownerMemberTransaction =
+      await circleContract.addMember(
+        signerAddress
+      );
+
+    const ownerMemberReceipt =
+      await ownerMemberTransaction.wait();
+
+    if (
+      !ownerMemberReceipt ||
+      ownerMemberReceipt.status !== 1
+    ) {
+      throw new Error(
+        "The circle was created, but the owner membership transaction failed."
+      );
+    }
+
+    const normalizedOwnerEmail = user.email
+      .trim()
+      .toLowerCase();
+
+    const invitationsWithoutOwner =
+      invitedMembers.filter(
+        (email) =>
+          email !== normalizedOwnerEmail
+      );
+
+    /*
+     * Store the confirmed Rootstock circle in Supabase.
+     */
+    const { error: circleError } =
+      await supabase
+        .from("circles")
+        .insert({
+          id: databaseCircleId,
+          owner_id: user.id,
+          name: circleName.trim(),
+          description: description.trim(),
+          contribution_amount: numericAmount,
+          currency,
+          contribution_frequency: frequency,
+          max_members: numericMaxMembers,
+          start_date: startDate || null,
+          privacy,
+
+          blockchain_circle_id:
+            blockchainCircleId,
+
+          contract_address:
+            deployedContractAddress,
+
+          creation_tx_hash:
+            creationTransactionHash,
+
+          blockchain_network:
+            "rootstock_testnet",
+
+          onchain_contribution_amount:
+            rbtcContributionText,
+
+          blockchain_status:
+            "confirmed",
+        });
+
+    if (circleError) {
+      throw circleError;
+    }
+
+    const ownerMembership = {
+      circle_id: databaseCircleId,
+      user_id: user.id,
+      email: normalizedOwnerEmail,
+      role: "owner",
+      status: "accepted",
+      joined_at: new Date().toISOString(),
+      invited_by: user.id,
+    };
+
+    const pendingInvitations =
+      invitationsWithoutOwner.map((email) => ({
+        circle_id: databaseCircleId,
+        user_id: null,
+        email,
+        role: "member",
+        status: "pending",
+        joined_at: null,
         invited_by: user.id,
-      };
+      }));
 
-      const pendingInvitations =
-        invitationsWithoutOwner.map((email) => ({
-          circle_id: newCircle.id,
-          user_id: null,
-          email,
-          role: "member",
-          status: "pending",
-          joined_at: null,
-          invited_by: user.id,
-        }));
-
-      const { error: membersError } = await supabase
+    const { error: membersError } =
+      await supabase
         .from("circle_members")
         .insert([
           ownerMembership,
           ...pendingInvitations,
         ]);
 
-      if (membersError) {
-        // Prevent leaving behind a circle with no owner membership.
-        await supabase
-          .from("circles")
-          .delete()
-          .eq("id", newCircle.id);
+    if (membersError) {
+      await supabase
+        .from("circles")
+        .update({
+          blockchain_status:
+            "confirmed_members_sync_failed",
+        })
+        .eq("id", databaseCircleId);
 
-        throw membersError;
-      }
-
-      router.push(`/circles/${newCircle.id}`);
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "Unable to create the savings circle."
-      );
-    } finally {
-      setLoading(false);
+      throw membersError;
     }
+
+    router.push(
+      `/circles/${databaseCircleId}`
+    );
+  } catch (error) {
+    const basicMessage =
+      error instanceof Error
+        ? error.message
+        : "Unable to create the savings circle.";
+
+    if (deployedContractAddress) {
+      setMessage(
+        `The circle was created on Rootstock at ${deployedContractAddress}, but ChainSave could not finish saving all application data. ${basicMessage}`
+      );
+    } else if (creationTransactionHash) {
+      setMessage(
+        `The Rootstock transaction was submitted, but setup did not finish. Transaction: ${creationTransactionHash}. ${basicMessage}`
+      );
+    } else {
+      setMessage(basicMessage);
+    }
+  } finally {
+    setLoading(false);
   }
+}
 
   return (
     <main className="min-h-screen bg-gray-100">

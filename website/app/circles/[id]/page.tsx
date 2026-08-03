@@ -1867,20 +1867,15 @@ export default function CircleDetailsPage() {
                   </label>
 
                   <Input
-                    type="number"
-                    min="1"
-                    step="0.01"
-                    value={
-                      contributionAmount
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={contributionAmount}
+                      onChange={(event) =>
+                      setContributionAmount(event.target.value)
                     }
-                    onChange={(event) =>
-                      setContributionAmount(
-                        event.target
-                          .value
-                      )
-                    }
-                    required
-                  />
+                      required
+                    />
 
                   <p className="mt-2 text-xs text-gray-500">
                     Expected contribution:{" "}
