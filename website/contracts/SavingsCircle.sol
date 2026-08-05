@@ -146,10 +146,28 @@ contract SavingsCircle is Ownable, ReentrancyGuard {
         }
 
         circleId = _circleId;
-        contributionAmount = _contributionAmount;
-        maxMembers = _maxMembers;
-        treasury = ITreasury(treasuryAddress);
-        status = CircleStatus.Draft;
+contributionAmount = _contributionAmount;
+maxMembers = _maxMembers;
+treasury = ITreasury(treasuryAddress);
+
+status = CircleStatus.Draft;
+
+// Automatically register the owner as the first member.
+members[initialOwner] = Member({
+    wallet: initialOwner,
+    active: true,
+    totalContributed: 0,
+    receivedPayout: false
+});
+
+memberAddresses.push(initialOwner);
+
+memberCount = 1;
+
+emit MemberAdded(
+    initialOwner,
+    memberCount
+);
     }
 
     function addMember(

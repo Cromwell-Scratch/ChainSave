@@ -15,17 +15,16 @@ declare
   v_cycle public.circle_cycles%rowtype;
 
   v_round_number integer;
+
   v_contribution_amount numeric;
+
+  v_service_fee numeric := 0;
+
+  v_total_debit numeric;
+
   v_new_wallet_balance numeric;
 
-  v_contribution_id uuid;
-  v_wallet_transaction_id uuid;
-
-  v_accepted_members integer;
-  v_completed_contributions integer;
-
-  v_expected_round_total numeric;
-  v_completed_round_total numeric;
+  v_fee_settings record;
 begin
   if v_user_id is null then
     raise exception
@@ -115,6 +114,36 @@ begin
       v_circle.contribution_amount,
       0
     );
+    select *
+into v_fee_settings
+from public.finance_settings
+limit 1;
+
+if v_fee_settings.contribution_fee_type = 'percentage' then
+  v_service_fee :=
+    greatest(
+      round(
+        (
+          v_contribution_amount
+          * v_fee_settings.contribution_fee_value
+          / 100
+        )::numeric,
+        2
+      ),
+      v_fee_settings.minimum_contribution_fee
+    );
+
+elsif v_fee_settings.contribution_fee_type = 'fixed' then
+  v_service_fee :=
+    v_fee_settings.contribution_fee_value;
+
+else
+  v_service_fee := 0;
+end if;
+
+v_total_debit :=
+  v_contribution_amount
+  + v_service_fee;
 
   if v_contribution_amount <= 0 then
     raise exception
@@ -154,18 +183,18 @@ begin
   end if;
 
   if
-    coalesce(v_wallet.balance, 0)
-    <
-    v_contribution_amount
-  then
+  coalesce(v_wallet.balance, 0)
+  <
+  v_total_debit
+then
     raise exception
       'Insufficient wallet balance.';
   end if;
 
   update public.wallets
-  set balance =
-    coalesce(balance, 0) -
-    v_contribution_amount
+set balance =
+  coalesce(balance, 0) -
+  v_total_debit
   where id = v_wallet.id
   returning balance
   into v_new_wallet_balance;

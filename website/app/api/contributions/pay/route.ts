@@ -1,8 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+import {
+  createClient,
+} from "@supabase/supabase-js";
 import {
   NextRequest,
   NextResponse,
 } from "next/server";
+
+import {
+  processContribution,
+} from "@/lib/server/contributions/processContribution";
 
 export const runtime = "nodejs";
 
@@ -10,39 +16,27 @@ type ContributionRequestBody = {
   circleId?: string;
 };
 
-type ContributionResult = {
-  success: boolean;
-  circle_id: string;
-  member_id: string;
-  round_number: number;
-  contribution_id: string;
-  wallet_transaction_id: string;
-  amount: number;
-  currency: string;
-  wallet_balance: number;
-  accepted_members: number;
-  completed_contributions: number;
-  expected_round_total: number;
-  completed_round_total: number;
-  round_complete: boolean;
-};
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type RoundProcessorResult = {
-  success?: boolean;
-  processed?: boolean;
-  reason?: string;
-  circle_completed?: boolean;
-  circle_id?: string;
-  round_number?: number;
-  completed_round?: number;
-  next_round?: number;
-  payout_member_id?: string;
-  payout_user_id?: string;
-  payout_amount?: number;
-  wallet_transaction_id?: string;
-  next_payout_member_id?: string;
-  next_payout_user_id?: string;
-};
+function getAccessToken(
+  request: NextRequest
+) {
+  const authorizationHeader =
+    request.headers.get("authorization");
+
+  if (
+    !authorizationHeader?.startsWith(
+      "Bearer "
+    )
+  ) {
+    return null;
+  }
+
+  return authorizationHeader.slice(
+    "Bearer ".length
+  );
+}
 
 export async function POST(
   request: NextRequest
@@ -69,51 +63,43 @@ export async function POST(
       );
     }
 
-    const authorizationHeader =
-      request.headers.get("authorization");
+    const accessToken =
+      getAccessToken(request);
 
-    if (
-      !authorizationHeader?.startsWith(
-        "Bearer "
-      )
-    ) {
+    if (!accessToken) {
       return NextResponse.json(
         {
           success: false,
-          error: "Authentication is required.",
+          error:
+            "Authentication is required.",
         },
         { status: 401 }
       );
     }
 
-    const accessToken =
-      authorizationHeader.slice(
-        "Bearer ".length
-      );
-
     const body =
       (await request.json()) as ContributionRequestBody;
 
-    const circleId = body.circleId?.trim();
+    const circleId =
+      body.circleId?.trim();
 
     if (!circleId) {
       return NextResponse.json(
         {
           success: false,
-          error: "A circle ID is required.",
+          error:
+            "A circle ID is required.",
         },
         { status: 400 }
       );
     }
 
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    if (!uuidPattern.test(circleId)) {
+    if (!UUID_PATTERN.test(circleId)) {
       return NextResponse.json(
         {
           success: false,
-          error: "The circle ID is invalid.",
+          error:
+            "The circle ID is invalid.",
         },
         { status: 400 }
       );
@@ -125,7 +111,8 @@ export async function POST(
       {
         global: {
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization:
+              `Bearer ${accessToken}`,
           },
         },
         auth: {
@@ -153,148 +140,16 @@ export async function POST(
       );
     }
 
-    const {
-      data,
-      error,
-    } = await userClient.rpc(
-      "make_circle_contribution",
-      {
-        p_circle_id: circleId,
-      }
-    );
-
-    if (error) {
-      console.error(
-        "Contribution RPC error:",
-        error
-      );
-
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            error.message ||
-            "Unable to complete the contribution.",
-        },
-        { status: 400 }
-      );
-    }
-
     const result =
-      data as ContributionResult | null;
-
-    if (!result?.success) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "The contribution could not be completed.",
-        },
-        { status: 400 }
-      );
-    }
-
-    let payoutResult:
-      | RoundProcessorResult
-      | null = null;
-
-    let payoutError:
-      | string
-      | null = null;
-
-    if (Boolean(result.round_complete)) {
-      try {
-        const {
-          data: processorData,
-          error: processorError,
-        } = await userClient.rpc(
-          "process_circle_round",
-          {
-            p_circle_id: circleId,
-          }
-        );
-
-        if (processorError) {
-          console.error(
-            "Round processor RPC error:",
-            processorError
-          );
-
-          payoutError =
-            processorError.message ||
-            "The contribution was completed, but the payout could not be processed.";
-        } else {
-          payoutResult =
-            processorData as
-              | RoundProcessorResult
-              | null;
-        }
-      } catch (processorException) {
-        console.error(
-          "Round processor exception:",
-          processorException
-        );
-
-        payoutError =
-          processorException instanceof Error
-            ? processorException.message
-            : "The contribution was completed, but the payout could not be processed.";
-      }
-    }
+      await processContribution({
+        userClient,
+        circleId,
+      });
 
     return NextResponse.json(
       {
         success: true,
-
-        contributionId:
-          result.contribution_id,
-
-        walletTransactionId:
-          result.wallet_transaction_id,
-
-        circleId:
-          result.circle_id,
-
-        memberId:
-          result.member_id,
-
-        roundNumber:
-          Number(result.round_number),
-
-        amount:
-          Number(result.amount),
-
-        currency:
-          result.currency,
-
-        walletBalance:
-          Number(result.wallet_balance),
-
-        acceptedMembers:
-          Number(result.accepted_members),
-
-        completedContributions:
-          Number(
-            result.completed_contributions
-          ),
-
-        expectedRoundTotal:
-          Number(result.expected_round_total),
-
-        completedRoundTotal:
-          Number(result.completed_round_total),
-
-        roundComplete:
-          Boolean(result.round_complete),
-
-        payoutProcessed:
-          Boolean(
-            payoutResult?.processed
-          ),
-
-        payoutResult,
-
-        payoutError,
+        ...result,
       },
       { status: 200 }
     );
@@ -304,15 +159,24 @@ export async function POST(
       error
     );
 
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unable to complete the contribution.";
+
+    const isBusinessError =
+      message !==
+      "Unable to complete the contribution.";
+
     return NextResponse.json(
       {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to complete the contribution.",
+        error: message,
       },
-      { status: 500 }
+      {
+        status:
+          isBusinessError ? 400 : 500,
+      }
     );
   }
 }

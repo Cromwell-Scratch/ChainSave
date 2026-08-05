@@ -69,6 +69,16 @@ const navigationGroups: NavigationGroup[] = [
     title: "Finance",
     items: [
       {
+       label: "Finance",
+       href: "/admin/finance",
+       icon: WalletCards,
+    },
+    {
+       label: "Fee Settings",
+       href: "/admin/finance/settings",
+       icon: Settings,
+     },
+      {
         label: "Transactions",
         href: "/admin/transactions",
         icon: CircleDollarSign,

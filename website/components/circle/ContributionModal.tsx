@@ -20,8 +20,12 @@ type ContributionModalProps = {
 
   walletBalance: number;
 
-  loading: boolean;
+  serviceFee: number;
+  totalDebit: number;
+  quoteLoading: boolean;
+  quoteError: string;
 
+  loading: boolean;
   message: string;
 
   onClose: () => void;
@@ -34,7 +38,6 @@ type ContributionModalProps = {
     value: string
   ) => void;
 };
-
 export default function ContributionModal({
   open,
 
@@ -45,6 +48,10 @@ export default function ContributionModal({
   expectedContribution,
 
   walletBalance,
+  serviceFee,
+  totalDebit,
+ quoteLoading,
+ quoteError,
 
   loading,
 
@@ -61,8 +68,9 @@ export default function ContributionModal({
   const amount =
     Number(contributionAmount || 0);
 
-  const balanceAfter =
-    walletBalance - amount;
+
+const balanceAfter =
+  walletBalance - totalDebit;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -104,27 +112,43 @@ export default function ContributionModal({
 
           <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
             <SummaryRow
-              label="Contribution Amount"
-              value={`${currency} ${formatAmount(
-                amount
-              )}`}
-            />
+  label="Contribution"
+  value={`${currency} ${formatAmount(
+    amount
+  )}`}
+/>
 
-            <SummaryRow
-              label="Wallet Balance"
-              value={`${currency} ${formatAmount(
-                walletBalance
-              )}`}
-            />
+<SummaryRow
+  label="Service Fee"
+  value={`${currency} ${formatAmount(
+    serviceFee
+  )}`}
+/>
 
-            <div className="border-t pt-4">
-              <SummaryRow
-                label="Balance After Payment"
-                value={`${currency} ${formatAmount(
-                  balanceAfter
-                )}`}
-              />
-            </div>
+<div className="border-t pt-4">
+  <SummaryRow
+    label="Total Debit"
+    value={`${currency} ${formatAmount(
+      totalDebit
+    )}`}
+  />
+</div>
+
+<SummaryRow
+  label="Wallet Balance"
+  value={`${currency} ${formatAmount(
+    walletBalance
+  )}`}
+/>
+
+<div className="border-t pt-4">
+  <SummaryRow
+    label="Balance After Payment"
+    value={`${currency} ${formatAmount(
+      balanceAfter
+    )}`}
+  />
+</div>
           </div>
 
           <div>
@@ -133,16 +157,10 @@ export default function ContributionModal({
             </label>
 
             <Input
-              type="number"
-              min="1"
-              step="0.01"
-              value={contributionAmount}
-              onChange={(event) =>
-                onAmountChange(
-                  event.target.value
-                )
-              }
-            />
+               type="number"
+               value={contributionAmount}
+               readOnly
+              />
 
             <p className="mt-2 text-xs text-gray-500">
               Expected contribution:{" "}
@@ -153,11 +171,17 @@ export default function ContributionModal({
             </p>
           </div>
 
+          {quoteError && (
+  <div className="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+    {quoteError}
+  </div>
+)}
+
           {balanceAfter < 0 && (
             <div className="rounded-lg bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               Your wallet balance is
-              insufficient for this
-              contribution.
+               insufficient for this
+                contribution and service fee.
             </div>
           )}
 
@@ -180,10 +204,12 @@ export default function ContributionModal({
             <Button
               type="submit"
               disabled={
-                loading ||
-                balanceAfter < 0 ||
-                amount <= 0
-              }
+                 loading ||
+                 quoteLoading ||
+                 Boolean(quoteError) ||
+                 balanceAfter < 0 ||
+                 amount <= 0
+                }
             >
               <CheckCircle2 className="mr-2 h-5 w-5" />
 

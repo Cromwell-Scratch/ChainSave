@@ -10,7 +10,6 @@ describe("SavingsCircle and Treasury", function () {
       owner,
       member1,
       member2,
-      member3,
       outsider,
     ] = await ethers.getSigners();
 
@@ -21,10 +20,17 @@ describe("SavingsCircle and Treasury", function () {
     const contributionAmount =
       ethers.parseEther("0.001");
 
+    /*
+     * maxMembers includes the owner,
+     * because the owner is automatically
+     * registered as Member #1.
+     */
     const maxMembers = 3;
 
     const Treasury =
-      await ethers.getContractFactory("Treasury");
+      await ethers.getContractFactory(
+        "Treasury"
+      );
 
     const treasury = await Treasury.deploy(
       owner.address
@@ -37,13 +43,14 @@ describe("SavingsCircle and Treasury", function () {
         "SavingsCircle"
       );
 
-    const circle = await SavingsCircle.deploy(
-      circleId,
-      contributionAmount,
-      maxMembers,
-      owner.address,
-      await treasury.getAddress()
-    );
+    const circle =
+      await SavingsCircle.deploy(
+        circleId,
+        contributionAmount,
+        maxMembers,
+        owner.address,
+        await treasury.getAddress()
+      );
 
     await circle.waitForDeployment();
 
@@ -56,7 +63,6 @@ describe("SavingsCircle and Treasury", function () {
       owner,
       member1,
       member2,
-      member3,
       outsider,
       circleId,
       contributionAmount,
@@ -75,12 +81,19 @@ describe("SavingsCircle and Treasury", function () {
       circle,
       member1,
       member2,
-      member3,
     } = setup;
 
-    await circle.addMember(member1.address);
-    await circle.addMember(member2.address);
-    await circle.addMember(member3.address);
+    /*
+     * Owner is already Member #1.
+     * Add only the two remaining members.
+     */
+    await circle.addMember(
+      member1.address
+    );
+
+    await circle.addMember(
+      member2.address
+    );
 
     await circle.startCircle();
 
@@ -88,11 +101,46 @@ describe("SavingsCircle and Treasury", function () {
   }
 
   it("starts in Draft status", async function () {
-    const { circle } = await loadFixture(
-      deployFixture
+    const { circle } =
+      await loadFixture(deployFixture);
+
+    expect(
+      await circle.status()
+    ).to.equal(0);
+  });
+
+  it("automatically registers the owner as the first member", async function () {
+    const {
+      owner,
+      circle,
+    } = await loadFixture(deployFixture);
+
+    expect(
+      await circle.isMember(owner.address)
+    ).to.equal(true);
+
+    expect(
+      await circle.memberCount()
+    ).to.equal(1);
+
+    const ownerData =
+      await circle.members(owner.address);
+
+    expect(ownerData.wallet).to.equal(
+      owner.address
     );
 
-    expect(await circle.status()).to.equal(0);
+    expect(ownerData.active).to.equal(
+      true
+    );
+
+    expect(
+      ownerData.totalContributed
+    ).to.equal(0);
+
+    expect(
+      ownerData.receivedPayout
+    ).to.equal(false);
   });
 
   it("allows the owner to add members", async function () {
@@ -105,27 +153,27 @@ describe("SavingsCircle and Treasury", function () {
       circle.addMember(member1.address)
     )
       .to.emit(circle, "MemberAdded")
-      .withArgs(member1.address, 1);
+      .withArgs(member1.address, 2);
 
     expect(
-      await circle.isMember(member1.address)
+      await circle.isMember(
+        member1.address
+      )
     ).to.equal(true);
 
     expect(
       await circle.memberCount()
-    ).to.equal(1);
+    ).to.equal(2);
   });
 
   it("rejects duplicate members", async function () {
     const {
+      owner,
       circle,
-      member1,
     } = await loadFixture(deployFixture);
 
-    await circle.addMember(member1.address);
-
     await expect(
-      circle.addMember(member1.address)
+      circle.addMember(owner.address)
     ).to.be.revertedWithCustomError(
       circle,
       "MemberAlreadyExists"
@@ -154,18 +202,23 @@ describe("SavingsCircle and Treasury", function () {
       circle,
       member1,
       member2,
-      member3,
     } = await loadFixture(deployFixture);
 
-    await circle.addMember(member1.address);
-    await circle.addMember(member2.address);
+    await circle.addMember(
+      member1.address
+    );
 
     await expect(
-      circle.addMember(member3.address)
+      circle.addMember(member2.address)
     ).to.emit(circle, "CircleReady");
 
-    expect(await circle.status()).to.equal(1);
-    expect(await circle.memberCount()).to.equal(3);
+    expect(
+      await circle.status()
+    ).to.equal(1);
+
+    expect(
+      await circle.memberCount()
+    ).to.equal(3);
   });
 
   it("cannot start before the circle is full", async function () {
@@ -174,7 +227,9 @@ describe("SavingsCircle and Treasury", function () {
       member1,
     } = await loadFixture(deployFixture);
 
-    await circle.addMember(member1.address);
+    await circle.addMember(
+      member1.address
+    );
 
     await expect(
       circle.startCircle()
@@ -186,26 +241,35 @@ describe("SavingsCircle and Treasury", function () {
 
   it("starts successfully after becoming Ready", async function () {
     const {
+      owner,
       circle,
       member1,
       member2,
-      member3,
     } = await loadFixture(deployFixture);
 
-    await circle.addMember(member1.address);
-    await circle.addMember(member2.address);
-    await circle.addMember(member3.address);
+    await circle.addMember(
+      member1.address
+    );
+
+    await circle.addMember(
+      member2.address
+    );
 
     await expect(
       circle.startCircle()
     ).to.emit(circle, "CircleStarted");
 
-    expect(await circle.status()).to.equal(2);
-    expect(await circle.currentRound()).to.equal(0);
+    expect(
+      await circle.status()
+    ).to.equal(2);
+
+    expect(
+      await circle.currentRound()
+    ).to.equal(0);
 
     expect(
       await circle.currentRecipient()
-    ).to.equal(member1.address);
+    ).to.equal(owner.address);
   });
 
   it("rejects contributions before activation", async function () {
@@ -215,12 +279,16 @@ describe("SavingsCircle and Treasury", function () {
       contributionAmount,
     } = await loadFixture(deployFixture);
 
-    await circle.addMember(member1.address);
+    await circle.addMember(
+      member1.address
+    );
 
     await expect(
-      circle.connect(member1).contribute({
-        value: contributionAmount,
-      })
+      circle
+        .connect(member1)
+        .contribute({
+          value: contributionAmount,
+        })
     ).to.be.revertedWithCustomError(
       circle,
       "CircleNotActive"
@@ -235,9 +303,11 @@ describe("SavingsCircle and Treasury", function () {
     } = await prepareActiveCircle();
 
     await expect(
-      circle.connect(outsider).contribute({
-        value: contributionAmount,
-      })
+      circle
+        .connect(outsider)
+        .contribute({
+          value: contributionAmount,
+        })
     ).to.be.revertedWithCustomError(
       circle,
       "NotCircleMember"
@@ -251,9 +321,14 @@ describe("SavingsCircle and Treasury", function () {
     } = await prepareActiveCircle();
 
     await expect(
-      circle.connect(member1).contribute({
-        value: ethers.parseEther("0.002"),
-      })
+      circle
+        .connect(member1)
+        .contribute({
+          value:
+            ethers.parseEther(
+              "0.002"
+            ),
+        })
     ).to.be.revertedWithCustomError(
       circle,
       "IncorrectContributionAmount"
@@ -267,14 +342,18 @@ describe("SavingsCircle and Treasury", function () {
       contributionAmount,
     } = await prepareActiveCircle();
 
-    await circle.connect(member1).contribute({
-      value: contributionAmount,
-    });
+    await circle
+      .connect(member1)
+      .contribute({
+        value: contributionAmount,
+      });
 
     await expect(
-      circle.connect(member1).contribute({
-        value: contributionAmount,
-      })
+      circle
+        .connect(member1)
+        .contribute({
+          value: contributionAmount,
+        })
     ).to.be.revertedWithCustomError(
       circle,
       "AlreadyContributedThisRound"
@@ -291,10 +370,15 @@ describe("SavingsCircle and Treasury", function () {
     } = await prepareActiveCircle();
 
     await expect(
-      circle.connect(member1).contribute({
-        value: contributionAmount,
-      })
-    ).to.emit(circle, "ContributionMade");
+      circle
+        .connect(member1)
+        .contribute({
+          value: contributionAmount,
+        })
+    ).to.emit(
+      circle,
+      "ContributionMade"
+    );
 
     expect(
       await circle.hasContributed(
@@ -304,37 +388,52 @@ describe("SavingsCircle and Treasury", function () {
     ).to.equal(true);
 
     expect(
-      await treasury.getCircleBalance(circleId)
-    ).to.equal(contributionAmount);
+      await treasury.getCircleBalance(
+        circleId
+      )
+    ).to.equal(
+      contributionAmount
+    );
   });
 
-  it("automatically pays the first recipient when the round is full", async function () {
+  it("automatically pays the owner as the first recipient when the round is full", async function () {
     const {
+      owner,
       circle,
       treasury,
       circleId,
       member1,
       member2,
-      member3,
       contributionAmount,
     } = await prepareActiveCircle();
 
-    await circle.connect(member1).contribute({
-      value: contributionAmount,
-    });
+    await circle
+      .connect(owner)
+      .contribute({
+        value: contributionAmount,
+      });
 
-    await circle.connect(member2).contribute({
-      value: contributionAmount,
-    });
+    await circle
+      .connect(member1)
+      .contribute({
+        value: contributionAmount,
+      });
 
     await expect(
-  circle.connect(member3).contribute({
-    value: contributionAmount,
-  })
-).to.emit(circle, "PayoutCompleted");
+      circle
+        .connect(member2)
+        .contribute({
+          value: contributionAmount,
+        })
+    ).to.emit(
+      circle,
+      "PayoutCompleted"
+    );
 
     expect(
-      await treasury.getCircleBalance(circleId)
+      await treasury.getCircleBalance(
+        circleId
+      )
     ).to.equal(0);
 
     expect(
@@ -343,82 +442,103 @@ describe("SavingsCircle and Treasury", function () {
 
     expect(
       await circle.currentRecipient()
-    ).to.equal(member2.address);
+    ).to.equal(member1.address);
 
-    const memberData =
-      await circle.members(member1.address);
+    const ownerData =
+      await circle.members(
+        owner.address
+      );
 
-    expect(memberData.receivedPayout).to.equal(
-      true
-    );
+    expect(
+      ownerData.receivedPayout
+    ).to.equal(true);
   });
 
   it("completes the circle after the final payout", async function () {
     const {
+      owner,
       circle,
       member1,
       member2,
-      member3,
       contributionAmount,
     } = await prepareActiveCircle();
 
     const members = [
+      owner,
       member1,
       member2,
-      member3,
     ];
 
-    for (let round = 0; round < 3; round++) {
+    for (
+      let round = 0;
+      round < 3;
+      round++
+    ) {
       for (const member of members) {
         await circle
           .connect(member)
           .contribute({
-            value: contributionAmount,
+            value:
+              contributionAmount,
           });
       }
     }
 
-    expect(await circle.status()).to.equal(3);
-    expect(await circle.currentRecipient()).to.equal(
+    expect(
+      await circle.status()
+    ).to.equal(3);
+
+    expect(
+      await circle.currentRecipient()
+    ).to.equal(
       ethers.ZeroAddress
     );
 
     expect(
       await circle.totalPayouts()
     ).to.equal(
-      contributionAmount * 3n * 3n
+      contributionAmount *
+        3n *
+        3n
     );
   });
 
   it("rejects contributions after completion", async function () {
     const {
+      owner,
       circle,
       member1,
       member2,
-      member3,
       contributionAmount,
     } = await prepareActiveCircle();
 
     const members = [
+      owner,
       member1,
       member2,
-      member3,
     ];
 
-    for (let round = 0; round < 3; round++) {
+    for (
+      let round = 0;
+      round < 3;
+      round++
+    ) {
       for (const member of members) {
         await circle
           .connect(member)
           .contribute({
-            value: contributionAmount,
+            value:
+              contributionAmount,
           });
       }
     }
 
     await expect(
-      circle.connect(member1).contribute({
-        value: contributionAmount,
-      })
+      circle
+        .connect(owner)
+        .contribute({
+          value: contributionAmount,
+        })
     ).to.be.revertedWithCustomError(
       circle,
       "CircleNotActive"
@@ -426,15 +546,19 @@ describe("SavingsCircle and Treasury", function () {
   });
 
   it("allows cancellation before activation", async function () {
-    const { circle } = await loadFixture(
-      deployFixture
-    );
+    const { circle } =
+      await loadFixture(deployFixture);
 
     await expect(
       circle.cancelCircle()
-    ).to.emit(circle, "CircleCancelled");
+    ).to.emit(
+      circle,
+      "CircleCancelled"
+    );
 
-    expect(await circle.status()).to.equal(4);
+    expect(
+      await circle.status()
+    ).to.equal(4);
   });
 
   it("rejects cancellation after activation", async function () {

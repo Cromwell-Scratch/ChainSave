@@ -37,6 +37,7 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import { supabase } from "@/lib/supabase";
+import ContributionModal from "@/components/circle/ContributionModal";
 
 type Circle = {
   id: string;
@@ -150,6 +151,26 @@ export default function CircleDetailsPage() {
     contributionMessage,
     setContributionMessage,
   ] = useState("");
+
+  const [
+  contributionServiceFee,
+  setContributionServiceFee,
+] = useState(0);
+
+const [
+  contributionTotalDebit,
+  setContributionTotalDebit,
+] = useState(0);
+
+const [
+  contributionQuoteLoading,
+  setContributionQuoteLoading,
+] = useState(false);
+
+const [
+  contributionQuoteError,
+  setContributionQuoteError,
+] = useState("");
 
   const [walletBalance, setWalletBalance] =
     useState(0);
@@ -334,6 +355,89 @@ export default function CircleDetailsPage() {
   useEffect(() => {
     loadCircle();
   }, [loadCircle]);
+
+  useEffect(() => {
+  if (
+    !showContributionModal ||
+    !circle
+  ) {
+    return;
+  }
+  const activeCircle = circle;
+
+  let cancelled = false;
+
+  async function loadContributionQuote() {
+    setContributionQuoteLoading(true);
+    setContributionQuoteError("");
+
+    try {
+      const response = await fetch(
+        "/api/finance/contribution-quote",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            contributionAmount:
+              activeCircle.contribution_amount,
+            currency:
+              activeCircle.currency,
+          }),
+        }
+      );
+
+      const result =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !result.success
+      ) {
+        throw new Error(
+          result.error ??
+            "Unable to calculate the contribution fee."
+        );
+      }
+
+      if (!cancelled) {
+        setContributionServiceFee(
+          Number(result.serviceFee)
+        );
+
+        setContributionTotalDebit(
+          Number(result.totalDebit)
+        );
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setContributionServiceFee(0);
+        setContributionTotalDebit(0);
+
+        setContributionQuoteError(
+          error instanceof Error
+            ? error.message
+            : "Unable to calculate the contribution fee."
+        );
+      }
+    } finally {
+      if (!cancelled) {
+        setContributionQuoteLoading(false);
+      }
+    }
+  }
+
+  void loadContributionQuote();
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  showContributionModal,
+  circle,
+]);
 
   const acceptedMembers = useMemo(
     () =>
@@ -680,6 +784,9 @@ export default function CircleDetailsPage() {
     setContributionAmount(
       String(circle.contribution_amount)
     );
+    setContributionServiceFee(0);
+    setContributionTotalDebit(0);
+    setContributionQuoteError("");
 
     const loaded =
       await loadWalletBalance();
@@ -1784,162 +1891,29 @@ export default function CircleDetailsPage() {
         </ModalOverlay>
       )}
 
-      {showContributionModal &&
-        circle && (
-          <ModalOverlay>
-            <Card className="w-full max-w-lg shadow-2xl">
-              <ModalHeader
-                title="Confirm Contribution"
-                description={`Review your payment to ${circle.name}.`}
-                onClose={() => {
-                  if (
-                    !contributionLoading
-                  ) {
-                    setShowContributionModal(
-                      false
-                    );
-                  }
-                }}
-              />
-
-              <form
-                onSubmit={
-                  handleContribution
-                }
-                className="mt-6 space-y-5"
-              >
-                <div className="rounded-2xl bg-green-50 p-5">
-                  <p className="text-sm font-medium text-green-800">
-                    Savings circle
-                  </p>
-
-                  <p className="mt-1 text-xl font-bold text-green-900">
-                    {circle.name}
-                  </p>
-                </div>
-
-                <div className="space-y-4 rounded-2xl border border-gray-200 p-5">
-                  <PaymentSummaryRow
-                    label="Contribution Amount"
-                    value={`${
-                      circle.currency
-                    } ${formatAmount(
-                      numericContributionAmount
-                    )}`}
-                  />
-
-                  <PaymentSummaryRow
-                    label="Wallet Balance"
-                    value={`${
-                      circle.currency
-                    } ${formatAmount(
-                      walletBalance
-                    )}`}
-                  />
-
-                  <div className="border-t border-gray-200 pt-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="font-semibold text-gray-700">
-                        Balance After
-                        Payment
-                      </p>
-
-                      <p
-                        className={`text-lg font-bold ${
-                          balanceAfterPayment <
-                          0
-                            ? "text-red-600"
-                            : "text-green-700"
-                        }`}
-                      >
-                        {circle.currency}{" "}
-                        {formatAmount(
-                          balanceAfterPayment
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-gray-700">
-                    Contribution Amount
-                  </label>
-
-                  <Input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={contributionAmount}
-                      onChange={(event) =>
-                      setContributionAmount(event.target.value)
-                    }
-                      required
-                    />
-
-                  <p className="mt-2 text-xs text-gray-500">
-                    Expected contribution:{" "}
-                    {circle.currency}{" "}
-                    {formatAmount(
-                      circle.contribution_amount
-                    )}
-                  </p>
-                </div>
-
-                {balanceAfterPayment <
-                  0 && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                    Your wallet balance is
-                    not enough for this
-                    contribution.
-                  </p>
-                )}
-
-                {contributionMessage && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-                    {
-                      contributionMessage
-                    }
-                  </p>
-                )}
-
-                <div className="flex justify-end gap-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() =>
-                      setShowContributionModal(
-                        false
-                      )
-                    }
-                    disabled={
-                      contributionLoading
-                    }
-                  >
-                    Cancel
-                  </Button>
-
-                  <Button
-                    type="submit"
-                    disabled={
-                      contributionLoading ||
-                      balanceAfterPayment <
-                        0 ||
-                      numericContributionAmount <=
-                        0
-                    }
-                  >
-                    <CheckCircle2 className="mr-2 h-5 w-5" />
-
-                    {contributionLoading
-                      ? "Processing Payment..."
-                      : "Confirm Payment"}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-          </ModalOverlay>
-        )}
+      <ContributionModal
+        serviceFee={contributionServiceFee}
+        totalDebit={contributionTotalDebit}
+        quoteLoading={contributionQuoteLoading}
+        quoteError={contributionQuoteError}
+        open={showContributionModal && !!circle}
+        circleName={circle?.name ?? ""}
+        currency={circle?.currency ?? "GHS"}
+        contributionAmount={contributionAmount}
+        expectedContribution={
+          circle?.contribution_amount ?? 0
+        }
+        walletBalance={walletBalance}
+        loading={contributionLoading}
+        message={contributionMessage}
+        onClose={() =>
+          setShowContributionModal(false)
+        }
+        onSubmit={handleContribution}
+        onAmountChange={
+          setContributionAmount
+        }
+      />
     </main>
   );
 }
@@ -2016,26 +1990,6 @@ function FinancialRow({
             : "font-bold text-gray-900"
         }
       >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function PaymentSummaryRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="text-sm text-gray-500">
-        {label}
-      </p>
-
-      <p className="font-bold text-gray-900">
         {value}
       </p>
     </div>

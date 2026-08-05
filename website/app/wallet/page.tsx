@@ -3,7 +3,13 @@
 import { useRootstockWallet } from "@/hooks/useRootstockWallet";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ArrowDownToLine,
   ArrowLeftRight,
@@ -112,7 +118,7 @@ function getErrorMessage(error: unknown): string {
   return String(error || "Unknown error");
 }
 
-export default function WalletPage() {
+function WalletPageContent() {
 const {
   address: connectedWalletAddress,
   normalizedAddress,
@@ -125,6 +131,7 @@ const {
   disconnectWallet,
   getBalance,
 } = useRootstockWallet();
+
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -219,7 +226,7 @@ setRootstockBalance(
   useEffect(() => {
     void loadWallet();
   }, [loadWallet]);
-
+  
 
   useEffect(() => {
   const depositStatus = searchParams.get("deposit");
@@ -1093,6 +1100,37 @@ onDisconnect={() => {
   }}
 />
           </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+export default function WalletPage() {
+  return (
+    <Suspense fallback={<WalletPageFallback />}>
+      <WalletPageContent />
+    </Suspense>
+  );
+}
+
+function WalletPageFallback() {
+  return (
+    <main className="min-h-screen bg-gray-50">
+      <div className="flex min-h-screen">
+        <Sidebar />
+
+        <div className="min-w-0 flex-1">
+          <Topbar />
+
+          <div className="flex min-h-[70vh] items-center justify-center">
+            <div className="text-center">
+              <div className="mx-auto h-11 w-11 animate-spin rounded-full border-4 border-green-600 border-t-transparent" />
+
+              <p className="mt-4 text-gray-600">
+                Loading wallet...
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </main>
