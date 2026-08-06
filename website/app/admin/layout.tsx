@@ -21,6 +21,7 @@ import {
   Users,
   WalletCards,
   X,
+  Layers3
 } from "lucide-react";
 import {
   usePathname,
@@ -70,6 +71,11 @@ const navigationGroups: NavigationGroup[] = [
         href: "/admin/wallets",
         icon: WalletCards,
       },
+      {
+        label: "Circles",
+        href: "/admin/circles",
+        icon: Layers3,
+    },
     ],
   },
   {
