@@ -476,7 +476,7 @@ export default function DashboardPage() {
         <div className="min-w-0 flex-1">
           <Topbar />
 
-          <section className="mx-auto max-w-7xl p-6 lg:p-8">
+          <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:p-8">
             {dashboardError && (
               <p className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-medium text-red-700">
                 {dashboardError}

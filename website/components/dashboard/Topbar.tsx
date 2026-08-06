@@ -13,6 +13,7 @@ import {
   CheckCheck,
   ExternalLink,
   Loader2,
+  Menu,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
@@ -28,24 +29,22 @@ type Notification = {
   created_at: string;
 };
 
-export default function Topbar() {
+type TopbarProps = {
+  onMenuClick?: () => void;
+};
+
+export default function Topbar({
+  onMenuClick,
+}: TopbarProps) {
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
   const [userInitial, setUserInitial] = useState("U");
-
-  const [notifications, setNotifications] = useState<
-    Notification[]
-  >([]);
-
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [markingAllRead, setMarkingAllRead] =
-    useState(false);
-
-  const [showNotifications, setShowNotifications] =
-    useState(false);
-
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [message, setMessage] = useState("");
 
   const unreadCount = notifications.filter(
@@ -60,31 +59,23 @@ export default function Topbar() {
       try {
         const { data, error } = await supabase
           .from("notifications")
-          .select(
-            `
-              id,
-              user_id,
-              circle_id,
-              title,
-              message,
-              type,
-              is_read,
-              created_at
-            `
-          )
+          .select(`
+            id,
+            user_id,
+            circle_id,
+            title,
+            message,
+            type,
+            is_read,
+            created_at
+          `)
           .eq("user_id", currentUserId)
-          .order("created_at", {
-            ascending: false,
-          })
+          .order("created_at", { ascending: false })
           .limit(8);
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
-        setNotifications(
-          (data as Notification[]) ?? []
-        );
+        setNotifications((data as Notification[]) ?? []);
       } catch (error) {
         setMessage(
           error instanceof Error
@@ -118,10 +109,7 @@ export default function Topbar() {
         "U";
 
       setUserInitial(
-        String(initialSource)
-          .trim()
-          .charAt(0)
-          .toUpperCase()
+        String(initialSource).trim().charAt(0).toUpperCase()
       );
 
       await loadNotifications(user.id);
@@ -155,29 +143,19 @@ export default function Topbar() {
   }, [loadNotifications, userId]);
 
   useEffect(() => {
-    function handleOutsideClick(
-      event: MouseEvent
-    ) {
+    function handleOutsideClick(event: MouseEvent) {
       if (
         dropdownRef.current &&
-        !dropdownRef.current.contains(
-          event.target as Node
-        )
+        !dropdownRef.current.contains(event.target as Node)
       ) {
         setShowNotifications(false);
       }
     }
 
-    document.addEventListener(
-      "mousedown",
-      handleOutsideClick
-    );
+    document.addEventListener("mousedown", handleOutsideClick);
 
     return () => {
-      document.removeEventListener(
-        "mousedown",
-        handleOutsideClick
-      );
+      document.removeEventListener("mousedown", handleOutsideClick);
     };
   }, []);
 
@@ -192,31 +170,21 @@ export default function Topbar() {
     try {
       const { error } = await supabase
         .from("notifications")
-        .update({
-          is_read: true,
-        })
+        .update({ is_read: true })
         .eq("id", notification.id)
         .eq("user_id", notification.user_id);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setNotifications((currentNotifications) =>
         currentNotifications.map((currentNotification) =>
           currentNotification.id === notification.id
-            ? {
-                ...currentNotification,
-                is_read: true,
-              }
+            ? { ...currentNotification, is_read: true }
             : currentNotification
         )
       );
 
-      openNotification({
-        ...notification,
-        is_read: true,
-      });
+      openNotification({ ...notification, is_read: true });
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -235,15 +203,11 @@ export default function Topbar() {
     try {
       const { error } = await supabase
         .from("notifications")
-        .update({
-          is_read: true,
-        })
+        .update({ is_read: true })
         .eq("user_id", userId)
         .eq("is_read", false);
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       setNotifications((currentNotifications) =>
         currentNotifications.map((notification) => ({
@@ -262,70 +226,51 @@ export default function Topbar() {
     }
   }
 
-  function openNotification(
-    notification: Notification
-  ) {
+  function openNotification(notification: Notification) {
     setShowNotifications(false);
 
     if (notification.circle_id) {
-      router.push(
-        `/circles/${notification.circle_id}`
-      );
+      router.push(`/circles/${notification.circle_id}`);
       return;
     }
 
     router.push("/notifications");
   }
 
-  function formatNotificationTime(
-    createdAt: string
-  ) {
+  function formatNotificationTime(createdAt: string) {
     const createdDate = new Date(createdAt);
     const now = new Date();
 
-    const difference =
-      now.getTime() - createdDate.getTime();
-
-    const minutes = Math.floor(
-      difference / (1000 * 60)
-    );
-
+    const difference = now.getTime() - createdDate.getTime();
+    const minutes = Math.floor(difference / (1000 * 60));
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (minutes < 1) {
-      return "Just now";
-    }
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
 
-    if (minutes < 60) {
-      return `${minutes}m ago`;
-    }
-
-    if (hours < 24) {
-      return `${hours}h ago`;
-    }
-
-    if (days < 7) {
-      return `${days}d ago`;
-    }
-
-    return createdDate.toLocaleDateString(
-      "en-GH",
-      {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      }
-    );
+    return createdDate.toLocaleDateString("en-GH", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
   }
 
   return (
-    <header className="relative flex items-center justify-end border-b border-gray-200 bg-white px-6 py-4 lg:px-8">
-      <div className="flex items-center gap-4">
-        <div
-          ref={dropdownRef}
-          className="relative"
-        >
+    <header className="relative flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+      <button
+        type="button"
+        onClick={onMenuClick}
+        className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 text-gray-700 transition hover:bg-gray-50 lg:hidden"
+        aria-label="Open navigation menu"
+      >
+        <Menu className="h-6 w-6" />
+      </button>
+
+      <div className="ml-auto flex items-center gap-3 sm:gap-4">
+        <div ref={dropdownRef} className="relative">
           <button
             type="button"
             onClick={() =>
@@ -339,16 +284,14 @@ export default function Topbar() {
 
             {unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold text-white">
-                {unreadCount > 9
-                  ? "9+"
-                  : unreadCount}
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 z-50 mt-3 w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+            <div className="fixed left-4 right-4 top-20 z-50 max-h-[calc(100vh-6rem)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-3 sm:w-[360px]">
+              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4 sm:px-5">
                 <div>
                   <h2 className="font-bold text-gray-900">
                     Notifications
@@ -358,9 +301,7 @@ export default function Topbar() {
                     {unreadCount === 0
                       ? "You are all caught up"
                       : `${unreadCount} unread notification${
-                          unreadCount === 1
-                            ? ""
-                            : "s"
+                          unreadCount === 1 ? "" : "s"
                         }`}
                   </p>
                 </div>
@@ -372,7 +313,7 @@ export default function Topbar() {
                     unreadCount === 0 ||
                     markingAllRead
                   }
-                  className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:text-gray-400"
+                  className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold text-green-700 transition hover:bg-green-50 disabled:cursor-not-allowed disabled:text-gray-400 sm:px-3"
                 >
                   {markingAllRead ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -380,7 +321,9 @@ export default function Topbar() {
                     <CheckCheck className="h-4 w-4" />
                   )}
 
-                  Mark all read
+                  <span className="hidden sm:inline">
+                    Mark all read
+                  </span>
                 </button>
               </div>
 
@@ -390,7 +333,7 @@ export default function Topbar() {
                 </p>
               )}
 
-              <div className="max-h-[430px] overflow-y-auto">
+              <div className="max-h-[calc(100vh-13rem)] overflow-y-auto sm:max-h-[430px]">
                 {loading ? (
                   <div className="flex items-center justify-center gap-3 p-10 text-gray-500">
                     <Loader2 className="h-5 w-5 animate-spin" />
@@ -407,8 +350,7 @@ export default function Topbar() {
                     </h3>
 
                     <p className="mt-2 text-sm text-gray-500">
-                      Important account and circle
-                      updates will appear here.
+                      Important account and circle updates will appear here.
                     </p>
                   </div>
                 ) : (
@@ -417,11 +359,9 @@ export default function Topbar() {
                       key={notification.id}
                       type="button"
                       onClick={() =>
-                        markNotificationRead(
-                          notification
-                        )
+                        markNotificationRead(notification)
                       }
-                      className={`flex w-full gap-4 border-b border-gray-100 px-5 py-4 text-left transition hover:bg-gray-50 ${
+                      className={`flex w-full gap-4 border-b border-gray-100 px-4 py-4 text-left transition hover:bg-gray-50 sm:px-5 ${
                         notification.is_read
                           ? "bg-white"
                           : "bg-green-50/60"
@@ -482,7 +422,7 @@ export default function Topbar() {
           )}
         </div>
 
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-700 font-semibold text-white">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-700 font-semibold text-white">
           {userInitial}
         </div>
       </div>
