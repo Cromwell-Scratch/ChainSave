@@ -31,10 +31,6 @@ function formatAmount(currency: string, amount: number) {
   });
 }
 
-function looksLikeWalletAddress(value: string) {
-  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
-}
-
 function looksLikeEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -74,8 +70,7 @@ export default function SendMoneyModal({
 
   const parsedAmount = Number(amount);
 
-  const validRecipient =
-    looksLikeEmail(recipient) || looksLikeWalletAddress(recipient);
+  const validRecipient = looksLikeEmail(recipient);
 
   const validSend =
     currency.length > 0 &&
@@ -111,13 +106,13 @@ export default function SendMoneyModal({
     }
 
     if (!recipient.trim()) {
-      setError("Enter the recipient's email or wallet address.");
+      setError("Enter the recipient's ChainSave email address.");
       return;
     }
 
     if (!validRecipient) {
       setError(
-        "Enter a valid email address or a valid Rootstock wallet address."
+        "Enter a valid ChainSave account email address."
       );
       return;
     }
@@ -176,7 +171,7 @@ export default function SendMoneyModal({
         }
       }}
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 p-6">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-blue-100 p-3 text-blue-700">
@@ -225,7 +220,7 @@ export default function SendMoneyModal({
                 setRecipient(event.target.value);
                 setError("");
               }}
-              placeholder="Email or 0x wallet address"
+              placeholder="recipient@example.com"
               disabled={loading}
               autoComplete="off"
               className="w-full rounded-xl border border-gray-300 px-4 py-3 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100"
@@ -233,8 +228,8 @@ export default function SendMoneyModal({
             />
 
             <p className="mt-2 text-xs leading-5 text-gray-500">
-              Use a ChainSave account email for an internal transfer or a
-              Rootstock address beginning with 0x.
+              Enter the email address used by the recipient's ChainSave account.
+              Direct Rootstock transfers are not enabled yet.
             </p>
           </div>
 
@@ -351,8 +346,8 @@ export default function SendMoneyModal({
 
           <div className="rounded-xl bg-yellow-50 p-4">
             <p className="text-sm leading-6 text-yellow-800">
-              Verify the recipient carefully. Transfers sent to a blockchain
-              address may not be reversible.
+              Verify the recipient email carefully. Internal ChainSave transfers
+              are processed immediately.
             </p>
           </div>
 

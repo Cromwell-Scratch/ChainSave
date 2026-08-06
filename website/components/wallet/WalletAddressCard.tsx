@@ -48,7 +48,7 @@ export default function WalletAddressCard({
   const connected = Boolean(address && isActive);
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-3">
@@ -59,10 +59,13 @@ export default function WalletAddressCard({
             <div>
               <h2 className="text-lg font-semibold text-gray-900">
                 Blockchain Wallet
+                <span className="ml-2 rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+                  Optional
+                </span>
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Manage your Rootstock wallet connection.
+                Connect only if you want direct Rootstock access.
               </p>
             </div>
           </div>
@@ -182,9 +185,9 @@ export default function WalletAddressCard({
           </h3>
 
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-            Connect an external wallet to view your address and prepare
-            ChainSave for future RBTC deposits, withdrawals and smart-contract
-            interactions.
+            This is optional. Your ChainSave Wallet works without a blockchain wallet.
+            Connect an external wallet only for direct Rootstock access, explorer
+            verification and future RBTC features.
           </p>
 
           <button

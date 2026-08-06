@@ -111,7 +111,7 @@ export default function LedgerActivity({
   loading = false,
 }: LedgerActivityProps) {
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
 
       <div className="mb-6 flex items-center justify-between">
 
@@ -167,9 +167,9 @@ export default function LedgerActivity({
             return (
               <div
                 key={entry.id}
-                className="flex items-center justify-between rounded-xl border border-gray-200 p-4 transition hover:bg-gray-50"
+                className="flex flex-col gap-4 rounded-xl border border-gray-200 p-4 transition hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 items-center gap-4">
 
                   <div
                     className={`rounded-xl p-3 ${config.color}`}
@@ -177,7 +177,7 @@ export default function LedgerActivity({
                     <Icon className="h-5 w-5" />
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
 
                     <h3 className="font-semibold text-gray-900">
                       {config.label}
@@ -198,13 +198,15 @@ export default function LedgerActivity({
 
                 </div>
 
-                <div className="text-right">
+                <div className="text-left sm:text-right">
 
-                  <p className="font-semibold text-gray-900">
-                    {formatAmount(
-                      entry.currency,
-                      entry.amount
-                    )}
+                  <p className={`font-semibold ${
+                    entry.amount >= 0
+                      ? "text-green-700"
+                      : "text-red-600"
+                  }`}>
+                    {entry.amount >= 0 ? "+" : ""}
+                    {formatAmount(entry.currency, entry.amount)}
                   </p>
 
                   <p className="text-sm text-gray-500">

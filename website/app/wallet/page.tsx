@@ -26,6 +26,8 @@ import {
 import Sidebar from "@/components/dashboard/Sidebar";
 import Topbar from "@/components/dashboard/Topbar";
 import WalletAddressCard from "@/components/wallet/WalletAddressCard";
+import WalletQuickActions from "@/components/wallet/WalletQuickActions";
+import PortfolioSummary from "@/components/wallet/PortfolioSummary";
 import LedgerActivity, {
   type LedgerEntry,
 } from "@/components/wallet/LedgerActivity";
@@ -349,6 +351,43 @@ setRootstockBalance(
     [ledger]
   );
 
+  const feeSummary = useMemo(() => {
+    return ledgerEntries.reduce(
+      (summary, entry) => {
+        const description =
+          entry.description?.toLowerCase() ?? "";
+
+        if (
+          entry.entry_type === "fee" ||
+          description.includes("platform fee")
+        ) {
+          summary.platformFees +=
+            Math.abs(Number(entry.amount));
+        }
+
+        if (
+          description.includes("network fee") ||
+          description.includes("rootstock")
+        ) {
+          summary.networkFees +=
+            Math.abs(Number(entry.amount));
+        }
+
+        if (entry.entry_type === "payout") {
+          summary.payouts +=
+            Math.abs(Number(entry.amount));
+        }
+
+        return summary;
+      },
+      {
+        platformFees: 0,
+        networkFees: 0,
+        payouts: 0,
+      }
+    );
+  }, [ledgerEntries]);
+
   async function changeDisplayCurrency(currency: string) {
     try {
       setSavingCurrency(true);
@@ -595,9 +634,9 @@ async function handleDisconnectRootstockWallet() {
   if (loading) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <div className="flex min-h-screen">
+        <div className="min-h-screen lg:flex">
           <Sidebar />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 w-full flex-1">
             <Topbar />
             <div className="flex min-h-[70vh] items-center justify-center">
               <div className="text-center">
@@ -613,13 +652,13 @@ async function handleDisconnectRootstockWallet() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="flex min-h-screen">
+      <div className="min-h-screen lg:flex">
         <Sidebar />
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-full flex-1">
           <Topbar />
 
-          <section className="mx-auto max-w-7xl space-y-7 px-5 py-8 lg:px-8">
+          <section className="mx-auto w-full max-w-7xl space-y-7 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-green-600">
@@ -682,8 +721,20 @@ async function handleDisconnectRootstockWallet() {
          </div>
        )}
 
+            <PortfolioSummary
+              portfolioValue={totalPortfolio}
+              availableBalance={availablePortfolio}
+              lockedBalance={lockedPortfolio}
+              currency={displayCurrency}
+              activeCurrencies={balances.filter(
+                (balance) =>
+                  Number(balance.available_balance) > 0 ||
+                  Number(balance.locked_balance) > 0
+              ).length}
+            />
+
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
-              <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-700 via-green-600 to-lime-500 p-7 text-white shadow-xl">
+              <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-green-800 via-green-700 to-lime-500 p-5 text-white shadow-xl sm:p-7">
                 <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10" />
 
                 <div className="relative">
@@ -695,7 +746,7 @@ async function handleDisconnectRootstockWallet() {
                     Available portfolio balance
                   </p>
 
-                  <h2 className="mt-2 text-4xl font-bold sm:text-5xl">
+                  <h2 className="mt-2 break-words text-3xl font-bold leading-tight sm:text-5xl">
                     {formatAmount(displayCurrency, availablePortfolio)}
                   </h2>
 
@@ -855,6 +906,22 @@ async function handleDisconnectRootstockWallet() {
               </section>
             </div>
 
+            <WalletQuickActions
+              onDeposit={() => setActiveModal("deposit")}
+              onWithdraw={() => {
+                if (displayCurrency !== "GHS") {
+                  setNotice(
+                    "Paystack withdrawals currently use your GHS balance. Change the wallet currency to GHS before withdrawing."
+                  );
+                  return;
+                }
+
+                setActiveModal("withdraw");
+              }}
+              onConvert={() => setActiveModal("convert")}
+              onSend={() => setActiveModal("send")}
+            />
+
             <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
               <button
                 type="button"
@@ -907,6 +974,29 @@ async function handleDisconnectRootstockWallet() {
                   ))}
                 </div>
               )}
+            </section>
+
+            <section className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-gray-500">Platform Fees Paid</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {formatAmount(displayCurrency, feeSummary.platformFees)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-gray-500">Network Fees Paid</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {formatAmount(displayCurrency, feeSummary.networkFees)}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <p className="text-sm text-gray-500">Payouts Received</p>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {formatAmount(displayCurrency, feeSummary.payouts)}
+                </p>
+              </div>
             </section>
 
             <WalletAddressCard
@@ -973,7 +1063,7 @@ onDisconnect={() => {
               onSend={async (data) => {
                 if (data.recipient.startsWith("0x")) {
                   throw new Error(
-                    "Rootstock address transfers are not enabled yet. Use a ChainSave email."
+                    "Direct Rootstock transfers are not enabled yet. Send to a ChainSave account email instead."
                   );
                 }
 
@@ -1116,10 +1206,10 @@ export default function WalletPage() {
 function WalletPageFallback() {
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="flex min-h-screen">
+      <div className="min-h-screen lg:flex">
         <Sidebar />
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-full flex-1">
           <Topbar />
 
           <div className="flex min-h-[70vh] items-center justify-center">

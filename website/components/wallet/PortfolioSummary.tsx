@@ -54,17 +54,17 @@ export default function PortfolioSummary({
   ];
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {cards.map((card) => (
         <div
           key={card.title}
-          className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md"
+          className="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md sm:p-6"
         >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">{card.title}</p>
 
-              <h2 className="mt-2 text-2xl font-bold text-gray-900">
+              <h2 className="mt-2 break-words text-xl font-bold text-gray-900 sm:text-2xl">
                 {card.value}
               </h2>
             </div>

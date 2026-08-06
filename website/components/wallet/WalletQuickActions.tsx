@@ -48,7 +48,7 @@ export default function WalletQuickActions({
   ];
 
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
       <div>
         <h2 className="text-lg font-semibold text-gray-900">
           Quick Actions
@@ -59,7 +59,7 @@ export default function WalletQuickActions({
         </p>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         {actions.map((action) => {
           const Icon = action.icon;
 
@@ -68,7 +68,7 @@ export default function WalletQuickActions({
               key={action.label}
               type="button"
               onClick={action.onClick}
-              className="group rounded-2xl border border-gray-200 p-5 text-left transition hover:border-green-300 hover:bg-green-50"
+              className="group rounded-2xl border border-gray-200 p-4 text-left transition hover:border-green-300 hover:bg-green-50 sm:p-5"
             >
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-100 text-green-700 transition group-hover:bg-green-600 group-hover:text-white">
                 <Icon className="h-5 w-5" />
