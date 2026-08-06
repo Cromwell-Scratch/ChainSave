@@ -31,6 +31,7 @@ type Activity = {
 export default function RecentActivity() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     loadActivities();
@@ -38,6 +39,7 @@ export default function RecentActivity() {
 
   async function loadActivities() {
     setLoading(true);
+    setMessage("");
 
     try {
       const [
@@ -148,6 +150,17 @@ export default function RecentActivity() {
       );
 
       setActivities(items.slice(0, 10));
+    } catch (error) {
+      console.error(
+        "Unable to load recent admin activity:",
+        error
+      );
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to load recent activity."
+      );
     } finally {
       setLoading(false);
     }
@@ -230,16 +243,24 @@ export default function RecentActivity() {
         </div>
       </div>
 
-      {loading ? (
+      {message ? (
+        <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {message}
+        </div>
+      ) : loading ? (
         <div className="py-10 text-center text-gray-500">
           Loading...
+        </div>
+      ) : activities.length === 0 ? (
+        <div className="py-10 text-center text-gray-500">
+          No recent activity found.
         </div>
       ) : (
         <div className="mt-6 divide-y">
           {activities.map((activity) => (
             <div
               key={activity.id}
-              className="flex items-center justify-between py-4"
+              className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex items-center gap-4">
                 {icon(activity.type)}
