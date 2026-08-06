@@ -1,6 +1,5 @@
 "use client";
 
-import { useRootstockWallet } from "@/hooks/useRootstockWallet";
 import {
   useEffect,
   useState,
@@ -48,13 +47,6 @@ type CreationQuote = {
 
 export default function CreateCirclePage() {
   const router = useRouter();
-  const {
-    address,
-    isConnected,
-    isRootstockTestnet,
-    connectWallet,
-  } = useRootstockWallet();
-
   const [currentStep, setCurrentStep] = useState(1);
 
   // Step 1 — Circle information
@@ -242,8 +234,7 @@ export default function CreateCirclePage() {
 
   useEffect(() => {
     if (
-      currentStep !== TOTAL_STEPS ||
-      !address
+      currentStep !== TOTAL_STEPS
     ) {
       setCreationQuote(null);
       setQuoteError("");
@@ -276,8 +267,6 @@ export default function CreateCirclePage() {
               maxMembers: Number(
                 maxMembers
               ),
-              circleOwnerAddress:
-                address,
             }),
           }
         );
@@ -364,7 +353,6 @@ export default function CreateCirclePage() {
       cancelled = true;
     };
   }, [
-    address,
     contributionAmount,
     currency,
     currentStep,
@@ -396,20 +384,6 @@ export default function CreateCirclePage() {
       if (!session) {
         router.push("/login");
         return;
-      }
-
-      if (!isConnected || !address) {
-        await connectWallet();
-
-        throw new Error(
-          "Connect your wallet, then click Launch Circle again."
-        );
-      }
-
-      if (!isRootstockTestnet) {
-        throw new Error(
-          "Please switch to Rootstock Testnet."
-        );
       }
 
       if (
@@ -445,8 +419,6 @@ export default function CreateCirclePage() {
             ),
             startDate,
             privacy,
-            circleOwnerAddress:
-              address,
             invitedMembers,
           }),
         }
@@ -1008,29 +980,14 @@ export default function CreateCirclePage() {
                           </h3>
 
                           <p className="mt-1 text-sm text-gray-500">
-                            ChainSave sponsors the Rootstock
-                            transaction. You pay these charges
-                            in your local currency.
+                            ChainSave uses its secure platform
+                            relayer to submit the Rootstock
+                            transaction. You pay the platform
+                            and network charges in your local
+                            currency.
                           </p>
 
-                          {!address ? (
-                            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                              <p className="text-sm font-medium text-amber-800">
-                                Connect your wallet to calculate
-                                the live Rootstock network fee.
-                              </p>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void connectWallet()
-                                }
-                                className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-800"
-                              >
-                                Connect Wallet
-                              </button>
-                            </div>
-                          ) : quoteLoading ? (
+                          {quoteLoading ? (
                             <p className="mt-5 text-sm font-medium text-gray-600">
                               Calculating the current network
                               fee...
@@ -1090,8 +1047,8 @@ export default function CreateCirclePage() {
 
                                 <span className="text-sm leading-6 text-gray-600">
                                   I understand and agree to the
-                                  platform and Rootstock network
-                                  charges shown above.
+                                  Platform Fee and Rootstock
+                                  Network Fee shown above.
                                 </span>
                               </label>
                             </div>

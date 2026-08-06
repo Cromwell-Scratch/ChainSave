@@ -12,7 +12,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 import {
   Contract,
-  getAddress,
   id,
   parseEther,
 } from "ethers";
@@ -62,7 +61,6 @@ type QuoteRequest = {
   contributionAmount?: number;
   currency?: string;
   maxMembers?: number;
-  circleOwnerAddress?: string;
 };
 
 function decimalForParseEther(
@@ -134,23 +132,14 @@ export async function POST(
       );
     }
 
-    let ownerAddress: string;
-
-    try {
-      ownerAddress = getAddress(
-        String(
-          body.circleOwnerAddress ?? ""
-        )
-      );
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            "Connect a valid Rootstock wallet.",
-        },
-        { status: 400 }
-      );
-    }
+    /*
+     * Circle creation is sponsored by ChainSave.
+     * The platform relayer is the initial on-chain
+     * owner, while the authenticated user remains
+     * the business owner in public.circles.owner_id.
+     */
+    const ownerAddress =
+      relayerWallet.address;
 
     const settings =
       await getFinanceSettings(

@@ -85,7 +85,6 @@ type CreateCircleRequest = {
   maxMembers?: number;
   startDate?: string | null;
   privacy?: string;
-  circleOwnerAddress?: string;
   invitedMembers?: string[];
 };
 
@@ -622,24 +621,15 @@ export async function POST(
       );
     }
 
-    let circleOwnerAddress: string;
-
-    try {
-      circleOwnerAddress = getAddress(
-        String(
-          body.circleOwnerAddress ?? ""
-        )
-      );
-    } catch {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Connect a valid Rootstock wallet before creating the circle.",
-        },
-        { status: 400 }
-      );
-    }
+    /*
+     * The user owns the circle in ChainSave through
+     * circles.owner_id. The platform relayer is the
+     * initial on-chain contract owner so ordinary
+     * users do not need MetaMask, RBTC, or a private
+     * blockchain key.
+     */
+    const circleOwnerAddress =
+      relayerWallet.address;
 
     const network =
       await relayerWallet.provider?.getNetwork();
@@ -945,6 +935,10 @@ export async function POST(
         contractAddress,
         transactionHash,
         sponsored: true,
+        ownershipMode:
+          "platform_custodial",
+        onchainOwner:
+          circleOwnerAddress,
         contributionAmount,
         currency,
         rbtcContribution:
