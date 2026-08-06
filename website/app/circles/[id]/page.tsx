@@ -12,15 +12,20 @@ import {
   useRouter,
 } from "next/navigation";
 import {
+  Activity,
   CalendarDays,
   CheckCircle2,
+  CircleGauge,
   Clock3,
+  Coins,
   Copy,
+  ExternalLink,
   Globe2,
   Lock,
   MailPlus,
   PauseCircle,
   PlayCircle,
+  ShieldCheck,
   TrendingUp,
   UserPlus,
   Users,
@@ -63,6 +68,12 @@ type Circle = {
   current_round: number | string | null;
   next_payout_member: string | null;
   next_contribution_date: string | null;
+
+  blockchain_circle_id: string | null;
+  contract_address: string | null;
+  creation_tx_hash: string | null;
+  blockchain_network: string | null;
+  blockchain_status: string | null;
 };
 
 type CircleMember = {
@@ -88,6 +99,12 @@ type ActivityItem = {
   title: string;
   description: string;
   date: string;
+};
+
+type FeeTransparency = {
+  platformFees: number;
+  networkFees: number;
+  transactionCount: number;
 };
 
 export default function CircleDetailsPage() {
@@ -178,6 +195,15 @@ const [
   const [walletLoading, setWalletLoading] =
     useState(false);
 
+  const [
+    feeTransparency,
+    setFeeTransparency,
+  ] = useState<FeeTransparency>({
+    platformFees: 0,
+    networkFees: 0,
+    transactionCount: 0,
+  });
+
   const loadContributions =
     useCallback(async () => {
       const { data, error } = await supabase
@@ -251,7 +277,12 @@ const [
           total_saved,
           current_round,
           next_payout_member,
-          next_contribution_date
+          next_contribution_date,
+          blockchain_circle_id,
+          contract_address,
+          creation_tx_hash,
+          blockchain_network,
+          blockchain_status
         `)
         .eq("id", params.id)
         .single();
@@ -336,6 +367,61 @@ const [
           ),
         }))
       );
+
+      /*
+       * Financial transparency is optional at the UI level.
+       * If no breakdown records exist yet, the card safely
+       * displays zero rather than blocking the circle page.
+       */
+      const {
+        data: feeRows,
+        error: feeRowsError,
+      } = await supabase
+        .from("payment_breakdowns")
+        .select(
+          "platform_fee, user_network_fee"
+        )
+        .eq("circle_id", params.id);
+
+      if (feeRowsError) {
+        console.error(
+          "Unable to load circle fee transparency:",
+          feeRowsError
+        );
+      } else {
+        const rows =
+          (feeRows ?? []) as Array<{
+            platform_fee:
+              | number
+              | string
+              | null;
+            user_network_fee:
+              | number
+              | string
+              | null;
+          }>;
+
+        setFeeTransparency({
+          platformFees: rows.reduce(
+            (total, row) =>
+              total +
+              Number(
+                row.platform_fee ?? 0
+              ),
+            0
+          ),
+          networkFees: rows.reduce(
+            (total, row) =>
+              total +
+              Number(
+                row.user_network_fee ?? 0
+              ),
+            0
+          ),
+          transactionCount:
+            rows.length,
+        });
+      }
     } catch (error) {
       console.error(
         "Unable to load circle:",
@@ -587,6 +673,56 @@ const [
     );
   }, [members, nextPayout]);
 
+  const rootstockExplorerBase =
+    "https://explorer.testnet.rootstock.io";
+
+  const contractExplorerUrl =
+    circle?.contract_address
+      ? `${rootstockExplorerBase}/address/${circle.contract_address}`
+      : null;
+
+  const transactionExplorerUrl =
+    circle?.creation_tx_hash
+      ? `${rootstockExplorerBase}/tx/${circle.creation_tx_hash}`
+      : null;
+
+  const completedContributionCount =
+    contributions.filter(
+      (contribution) =>
+        contribution.status ===
+        "completed"
+    ).length;
+
+  const expectedContributionCount =
+    Math.max(
+      acceptedMembers.length *
+        Math.max(
+          Number(
+            circle?.current_round ?? 1
+          ),
+          1
+        ),
+      1
+    );
+
+  const contributionRate = Math.min(
+    100,
+    Math.round(
+      (completedContributionCount /
+        expectedContributionCount) *
+        100
+    )
+  );
+
+  const circleHealth =
+    effectiveStatus === "paused"
+      ? "Needs attention"
+      : contributionRate >= 90
+        ? "Excellent"
+        : contributionRate >= 70
+          ? "Good"
+          : "Building";
+
   const activityItems =
     useMemo<ActivityItem[]>(() => {
       if (!circle) {
@@ -601,6 +737,20 @@ const [
           date: circle.created_at,
         },
       ];
+
+      if (
+        circle.creation_tx_hash &&
+        circle.blockchain_status
+      ) {
+        items.push({
+          id: `rootstock-${circle.id}`,
+          title:
+            "Rootstock contract verified",
+          description:
+            "The savings circle was registered on Rootstock.",
+          date: circle.created_at,
+        });
+      }
 
       members.forEach((member) => {
         if (member.joined_at) {
@@ -1153,13 +1303,13 @@ const [
 
   return (
     <main className="min-h-screen bg-gray-100">
-      <div className="flex min-h-screen">
+      <div className="min-h-screen lg:flex">
         <Sidebar />
 
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-full flex-1">
           <Topbar />
 
-          <section className="p-6 lg:p-8">
+          <section className="px-4 py-5 sm:px-6 sm:py-6 lg:p-8">
             {loading && (
               <p className="text-gray-600">
                 Loading circle...
@@ -1691,6 +1841,221 @@ const [
                     </Card>
                   </div>
 
+                  <div className="mt-8 grid gap-6 xl:grid-cols-3">
+                    <Card>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-orange-600">
+                            Rootstock Proof
+                          </p>
+
+                          <h2 className="mt-2 text-2xl font-bold text-gray-900">
+                            Blockchain Verification
+                          </h2>
+                        </div>
+
+                        <div className="rounded-2xl bg-orange-100 p-3 text-orange-700">
+                          <ShieldCheck className="h-6 w-6" />
+                        </div>
+                      </div>
+
+                      <div className="mt-6 space-y-4">
+                        <TransparencyRow
+                          label="Status"
+                          value={
+                            circle.blockchain_status ===
+                            "confirmed"
+                              ? "Verified"
+                              : circle.blockchain_status ??
+                                "Pending"
+                          }
+                          positive={
+                            circle.blockchain_status ===
+                            "confirmed"
+                          }
+                        />
+
+                        <TransparencyRow
+                          label="Network"
+                          value={
+                            circle.blockchain_network
+                              ?.replace(
+                                /_/g,
+                                " "
+                              )
+                              .replace(
+                                /\w/g,
+                                (
+                                  character
+                                ) =>
+                                  character.toUpperCase()
+                              ) ??
+                            "Rootstock Testnet"
+                          }
+                        />
+                      </div>
+
+                      {circle.contract_address ? (
+                        <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            Smart Contract
+                          </p>
+
+                          <p className="mt-2 break-all font-mono text-sm text-gray-900">
+                            {circle.contract_address}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-5 rounded-xl bg-yellow-50 px-4 py-3 text-sm font-medium text-yellow-800">
+                          Contract address is not available yet.
+                        </p>
+                      )}
+
+                      <div className="mt-5 flex flex-col gap-3 sm:flex-row xl:flex-col 2xl:flex-row">
+                        {contractExplorerUrl && (
+                          <a
+                            href={
+                              contractExplorerUrl
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-orange-700"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            View Contract
+                          </a>
+                        )}
+
+                        {transactionExplorerUrl && (
+                          <a
+                            href={
+                              transactionExplorerUrl
+                            }
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-orange-200 px-4 py-3 text-sm font-semibold text-orange-700 transition hover:bg-orange-50"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Deployment Tx
+                          </a>
+                        )}
+                      </div>
+                    </Card>
+
+                    <Card>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-green-700">
+                            Fee Transparency
+                          </p>
+
+                          <h2 className="mt-2 text-2xl font-bold text-gray-900">
+                            Charges Summary
+                          </h2>
+                        </div>
+
+                        <div className="rounded-2xl bg-green-100 p-3 text-green-700">
+                          <Coins className="h-6 w-6" />
+                        </div>
+                      </div>
+
+                      <div className="mt-6 space-y-4">
+                        <FinancialRow
+                          label="Platform Fees"
+                          value={`${
+                            circle.currency
+                          } ${formatAmount(
+                            feeTransparency.platformFees
+                          )}`}
+                        />
+
+                        <FinancialRow
+                          label="Network Fees"
+                          value={`${
+                            circle.currency
+                          } ${formatAmount(
+                            feeTransparency.networkFees
+                          )}`}
+                        />
+
+                        <FinancialRow
+                          label="Recorded Fee Events"
+                          value={`${feeTransparency.transactionCount}`}
+                          strong
+                        />
+                      </div>
+
+                      <p className="mt-5 text-xs leading-5 text-gray-500">
+                        Platform Fees support ChainSave operations. Network Fees cover Rootstock processing and gas costs.
+                      </p>
+                    </Card>
+
+                    <Card>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-purple-700">
+                            Circle Health
+                          </p>
+
+                          <h2 className="mt-2 text-2xl font-bold text-gray-900">
+                            {circleHealth}
+                          </h2>
+                        </div>
+
+                        <div className="rounded-2xl bg-purple-100 p-3 text-purple-700">
+                          <CircleGauge className="h-6 w-6" />
+                        </div>
+                      </div>
+
+                      <div className="mt-6 rounded-2xl bg-purple-50 p-5">
+                        <div className="flex items-end justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium text-purple-700">
+                              Contribution Rate
+                            </p>
+
+                            <p className="mt-2 text-4xl font-bold text-purple-900">
+                              {contributionRate}%
+                            </p>
+                          </div>
+
+                          <Activity className="h-9 w-9 text-purple-600" />
+                        </div>
+
+                        <div className="mt-5 h-3 overflow-hidden rounded-full bg-purple-100">
+                          <div
+                            className="h-full rounded-full bg-purple-600 transition-all duration-500"
+                            style={{
+                              width: `${contributionRate}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl border border-gray-200 p-4">
+                          <p className="text-xs uppercase tracking-wide text-gray-500">
+                            Members
+                          </p>
+
+                          <p className="mt-2 font-bold text-gray-900">
+                            {acceptedMembers.length} / {circle.max_members}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 p-4">
+                          <p className="text-xs uppercase tracking-wide text-gray-500">
+                            Contributions
+                          </p>
+
+                          <p className="mt-2 font-bold text-gray-900">
+                            {completedContributionCount}
+                          </p>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+
                   <PayoutQueueCard
                     payouts={payouts}
                     members={members}
@@ -1992,6 +2357,40 @@ function FinancialRow({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+function TransparencyRow({
+  label,
+  value,
+  positive = false,
+}: {
+  label: string;
+  value: string;
+  positive?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl bg-gray-50 px-4 py-4">
+      <p className="text-sm font-medium text-gray-600">
+        {label}
+      </p>
+
+      <div className="flex items-center gap-2">
+        {positive && (
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
+        )}
+
+        <p
+          className={
+            positive
+              ? "font-bold text-green-700"
+              : "font-bold text-gray-900"
+          }
+        >
+          {value}
+        </p>
+      </div>
     </div>
   );
 }
