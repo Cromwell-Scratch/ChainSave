@@ -10,17 +10,18 @@ export default function Hero() {
   return (
     <section
       id="home"
-      className="relative flex min-h-[85vh] items-center overflow-hidden bg-gradient-to-br from-white via-green-50 to-white px-6 pb-20 pt-36 lg:px-8"
+      className="relative overflow-hidden bg-gradient-to-br from-white via-green-50 to-white px-4 pb-16 pt-28 sm:px-6 sm:pb-20 sm:pt-36 lg:min-h-[85vh] lg:px-8"
     >
-      <div className="mx-auto grid w-full max-w-7xl items-center gap-16 lg:grid-cols-2">
-        {/* Left Side */}
-        <div className="relative z-10">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700">
-            <Bitcoin className="h-4 w-4" />
-            Bitcoin-powered community savings
+      <div className="mx-auto grid w-full max-w-7xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="relative z-10 text-center lg:text-left">
+          <div className="mb-5 inline-flex max-w-full items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-semibold text-orange-700 sm:text-sm">
+            <Bitcoin className="h-4 w-4 shrink-0" />
+            <span>
+              Bitcoin-powered community savings
+            </span>
           </div>
 
-          <h1 className="text-5xl font-extrabold leading-tight text-slate-900 sm:text-6xl lg:text-7xl">
+          <h1 className="text-4xl font-extrabold leading-tight text-slate-900 sm:text-5xl md:text-6xl lg:text-7xl">
             Save Together.
             <br />
             <span className="text-green-600">
@@ -28,52 +29,55 @@ export default function Hero() {
             </span>
           </h1>
 
-          <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
-            ChainSave helps families, friends, churches, cooperatives,
-            and communities save together through transparent
-            Bitcoin-powered savings circles secured by Rootstock smart
+          <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg sm:leading-8 lg:mx-0">
+            ChainSave helps families, friends,
+            churches, cooperatives, and
+            communities save together through
+            transparent Bitcoin-powered savings
+            circles secured by Rootstock smart
             contracts.
           </p>
 
-          <div className="mt-10 flex flex-wrap gap-4">
+          <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:justify-center sm:gap-4 lg:justify-start">
             <Link
               href="/register"
-              className="rounded-xl bg-green-600 px-8 py-4 font-semibold text-white shadow-lg transition duration-300 hover:-translate-y-0.5 hover:bg-green-700 hover:shadow-xl"
+              className="rounded-xl bg-green-600 px-6 py-3.5 text-center font-semibold text-white shadow-lg transition duration-300 hover:-translate-y-0.5 hover:bg-green-700 hover:shadow-xl sm:px-8 sm:py-4"
             >
               Start Saving
             </Link>
 
             <a
               href="#how-it-works"
-              className="rounded-xl border border-slate-300 bg-white px-8 py-4 font-semibold text-slate-700 transition duration-300 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-50"
+              className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-center font-semibold text-slate-700 transition duration-300 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-50 sm:px-8 sm:py-4"
             >
               See How It Works
             </a>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium text-slate-700">
+          <div className="mt-7 grid gap-3 text-left text-sm font-medium text-slate-700 sm:mt-8 sm:grid-cols-3 sm:text-center lg:text-left">
             <div className="flex items-center gap-2">
-              <Bitcoin className="h-5 w-5 text-orange-500" />
+              <Bitcoin className="h-5 w-5 shrink-0 text-orange-500" />
               <span>Built on Bitcoin</span>
             </div>
 
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />
               <span>Powered by Rootstock</span>
             </div>
 
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-slate-700" />
-              <span>Smart Contract Protected</span>
+              <ShieldCheck className="h-5 w-5 shrink-0 text-slate-700" />
+              <span>
+                Smart Contract Protected
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Right Side */}
-        <div className="relative flex justify-center lg:justify-end">
+        <div className="relative mx-auto flex w-full max-w-xl justify-center lg:justify-end">
           <div className="absolute -right-10 top-0 h-72 w-72 rounded-full bg-green-300 opacity-20 blur-[120px]" />
 
-          <div className="absolute -left-16 top-8 hidden rounded-2xl border border-orange-100 bg-white px-4 py-3 shadow-lg sm:block">
+          <div className="absolute -left-8 top-8 hidden rounded-2xl border border-orange-100 bg-white px-4 py-3 shadow-lg sm:block lg:-left-16">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
                 <Bitcoin className="h-5 w-5 text-orange-500" />
@@ -90,49 +94,48 @@ export default function Hero() {
             </div>
           </div>
 
-          <div className="relative z-10 w-full max-w-[430px] rounded-3xl border border-slate-100 bg-white p-8 shadow-2xl">
+          <div className="relative z-10 w-full max-w-[430px] rounded-3xl border border-slate-100 bg-white p-5 shadow-2xl sm:p-8">
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium text-green-600">
                   Active savings circle
                 </p>
 
-                <h3 className="mt-1 text-2xl font-bold text-slate-900">
+                <h3 className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">
                   Family Savings Circle
                 </h3>
 
-                <p className="mt-2 text-slate-500">
+                <p className="mt-2 text-sm text-slate-500 sm:text-base">
                   10 active members
                 </p>
               </div>
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-100">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-green-100 sm:h-12 sm:w-12">
                 <Users className="h-6 w-6 text-green-700" />
               </div>
             </div>
 
             <div className="mt-6 flex -space-x-2">
-              <div className="h-11 w-11 rounded-full border-2 border-white bg-green-600" />
-              <div className="h-11 w-11 rounded-full border-2 border-white bg-blue-500" />
-              <div className="h-11 w-11 rounded-full border-2 border-white bg-yellow-500" />
-              <div className="h-11 w-11 rounded-full border-2 border-white bg-purple-500" />
-
-              <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-sm font-semibold text-slate-700">
+              <div className="h-10 w-10 rounded-full border-2 border-white bg-green-600 sm:h-11 sm:w-11" />
+              <div className="h-10 w-10 rounded-full border-2 border-white bg-blue-500 sm:h-11 sm:w-11" />
+              <div className="h-10 w-10 rounded-full border-2 border-white bg-yellow-500 sm:h-11 sm:w-11" />
+              <div className="h-10 w-10 rounded-full border-2 border-white bg-purple-500 sm:h-11 sm:w-11" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-xs font-semibold text-slate-700 sm:h-11 sm:w-11 sm:text-sm">
                 +6
               </div>
             </div>
 
-            <div className="mt-8 rounded-2xl bg-slate-50 p-5">
+            <div className="mt-7 rounded-2xl bg-slate-50 p-4 sm:mt-8 sm:p-5">
               <p className="text-sm text-slate-500">
                 Total saved
               </p>
 
-              <div className="mt-2 flex items-end justify-between gap-4">
-                <h2 className="text-4xl font-bold text-green-700">
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <h2 className="text-3xl font-bold text-green-700 sm:text-4xl">
                   GHS 5,000
                 </h2>
 
-                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
+                <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">
                   80% funded
                 </span>
               </div>
@@ -147,7 +150,7 @@ export default function Hero() {
             </div>
 
             <div className="mt-6 border-t border-slate-200 pt-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm text-slate-500">
                     Latest activity
@@ -169,7 +172,7 @@ export default function Hero() {
             </div>
           </div>
 
-          <div className="absolute -bottom-18 right-4 hidden rounded-2xl border border-green-100 bg-white px-4 py-3 shadow-lg sm:block">
+          <div className="absolute -bottom-10 right-4 hidden rounded-2xl border border-green-100 bg-white px-4 py-3 shadow-lg sm:block">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
                 <ShieldCheck className="h-5 w-5 text-green-700" />
