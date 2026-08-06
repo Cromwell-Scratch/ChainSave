@@ -44,6 +44,9 @@ type AcceptedMemberRow = {
 export default function DashboardPage() {
   const router = useRouter();
 
+  const [sidebarOpen, setSidebarOpen] =
+    useState(false);
+
   const [
     checkingSession,
     setCheckingSession,
@@ -470,11 +473,20 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-gray-100">
-      <div className="flex min-h-screen">
-        <Sidebar />
+      <div className="min-h-screen lg:flex">
+        <Sidebar
+          open={sidebarOpen}
+          onClose={() =>
+            setSidebarOpen(false)
+          }
+        />
 
-        <div className="min-w-0 flex-1">
-          <Topbar />
+        <div className="min-w-0 w-full flex-1">
+          <Topbar
+            onMenuClick={() =>
+              setSidebarOpen(true)
+            }
+          />
 
           <section className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6 lg:p-8">
             {dashboardError && (
