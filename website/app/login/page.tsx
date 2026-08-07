@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -58,18 +59,27 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block mb-2 text-sm font-semibold text-gray-700">
-              Password
-            </label>
+  <div className="flex items-center justify-between mb-2">
+    <label className="text-sm font-semibold text-gray-700">
+      Password
+    </label>
 
-            <input
-              type="password"
-              placeholder="********"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-green-600 transition"
-            />
-          </div>
+    <Link
+      href="/forgot-password"
+      className="text-sm font-medium text-green-700 hover:underline"
+    >
+      Forgot Password?
+    </Link>
+  </div>
+
+  <input
+    type="password"
+    placeholder="********"
+    value={password}
+    onChange={(event) => setPassword(event.target.value)}
+    className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-600 focus:border-green-600 transition"
+  />
+</div>
 
           <button
             type="submit"
