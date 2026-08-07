@@ -1,10 +1,12 @@
 "use client";
  import { supabase } from "@/lib/supabase";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 export default function RegisterPage() {
+  const router = useRouter();
 const [fullName, setFullName] = useState("");
 const [email, setEmail] = useState("");
 const [password, setPassword] = useState("");
@@ -28,14 +30,14 @@ async function handleRegister(event: React.FormEvent<HTMLFormElement>) {
 
   if (error) {
     setMessage(error.message);
-  } else {
-    setMessage("Account created. Check your email to confirm your account.");
-    setFullName("");
-    setEmail("");
-    setPassword("");
+    setLoading(false);
+    return;
   }
 
-  setLoading(false);
+  // Give Supabase a moment to establish the session
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  router.push("/dashboard");
 }
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
